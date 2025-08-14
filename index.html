@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Vapor‑Random — Fullscreen Rev D</title>
+  <title>Vapor‑Random — Fullscreen Rev D (Patched)</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -71,7 +71,11 @@
     padBus.connect(filter); melBus.connect(filter); filter.connect(master); padBus.connect(verbSend); melBus.connect(verbSend); verbSend.connect(verb); verb.connect(master); melBus.connect(delay); delay.connect(master);
     setPadMode(); startMelody(); }
   function makeReverbImpulse(s,d){ const rate=48000,len=Math.floor(rate*s); const ctx=(ac||new AudioContext()); const buf=ctx.createBuffer(2,len,rate); for(let c=0;c<2;c++){ const data=buf.getChannelData(c); for(let i=0;i<len;i++){ const t=i/len; data[i]=(Math.random()*2-1)*Math.pow(1-t,d);} } return buf; }
-  function stopVoices(){ voices.forEach(o=>{ try{o.stop()}catch{} try{o.disconnect()}catch{} }); voices=[]; if(vibratoLFO){ try{vibratoLFO.stop()}catch{} vibratoLFO=null; }
+  function stopVoices(){
+    voices.forEach(o=>{ try{o.stop()}catch{} try{o.disconnect()}catch{} });
+    voices=[];
+    if(vibratoLFO){ try{vibratoLFO.stop()}catch{} vibratoLFO=null; }
+  }
   function pickChord(){ const roots=[196,220,247,262,294,330]; const root=roots[Math.floor(Math.random()*roots.length)]; const major=Math.random()<0.55; const tri=major?[0,4,7]:[0,3,7]; const add7=Math.random()<0.35?(major?11:10):null; const notes=tri.concat(add7!==null?[add7]:[]); currentScale={root,major}; return notes.map(n=> root*Math.pow(2,n/12)); }
   function setPadMode(){ if(!ac) return; stopVoices(); const mode=['sine','saw','ring'][Math.floor(Math.random()*3)]; const freqs=pickChord(); const pre=ac.createGain(); pre.gain.value=0.7; freqs.forEach((f,i)=>{ const o=ac.createOscillator(); o.type=(mode==='saw')?(i%2?'triangle':'sawtooth'):'sine'; o.frequency.value=f; const g=ac.createGain(); g.gain.value=0.22; o.connect(g); g.connect(pre); o.start(); voices.push(o); }); vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.2+Math.random()*0.25; const vib=ac.createGain(); vib.gain.value=4.0; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start(); if(mode==='ring'){ const vca=ac.createGain(); const mod=ac.createOscillator(); mod.type='sine'; mod.frequency.value=80+Math.random()*160; const sc=ac.createGain(); sc.gain.value=0.5; const off=ac.createConstantSource(); off.offset.value=0.5; off.start(); pre.connect(vca); vca.connect(padBus); mod.connect(sc); sc.connect(vca.gain); off.connect(vca.gain); mod.start(); } else { pre.connect(padBus);} filter.frequency.setTargetAtTime(mode==='saw'?1400:2300, ac.currentTime, 0.5); }
   function startMelody(){ if(melodyTimer) clearTimeout(melodyTimer); const tick=()=>{ const interval=340+Math.random()*320; playMelodyNote(); melodyTimer=setTimeout(tick, interval); }; tick(); }
@@ -177,6 +181,15 @@
 
   // Start
   beginBtn.addEventListener('click', async ()=>{ overlay.style.display='none'; if(!started){ initAudio(); started=true; } if(gl && !prog){ initGL(); } await nextRoom(); });
+
+  // ---------- Smoke tests (non‑intrusive) ----------
+  (function smoke(){
+    try {
+      console.assert(!!document.getElementById('stage'), 'stage missing');
+      console.assert(glCanvas && imgCanvas, 'canvases missing');
+      console.assert(typeof window.addEventListener === 'function', 'event system missing');
+    } catch(e){ console.warn('Smoke tests:', e); }
+  })();
 })();
 </script>
 </body>
