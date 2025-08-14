@@ -2,59 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vapor‑Random — Rev C</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Vapor‑Random — Fullscreen Rev D</title>
   <style>
-    :root { --bg:#0a0b10; --fg:#e8e8ff; --scan:rgba(255,255,255,0.04); }
+    :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
     html,body{height:100%}
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none}
-    #frame{position:fixed;inset:0;display:grid;place-items:center;background:radial-gradient(120% 140% at 50% 30%,#131326 0%,#090a12 60%,#06060b 100%)}
-    #crt{position:relative;width:min(100vw,100vh*0.75*1.0);height:calc(min(100vw,100vh*0.75*1.0)*0.75);max-width:100vw;max-height:100vh;border-radius:14px;overflow:hidden;box-shadow:0 30px 120px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06) inset;background:#0a0b10}
-    #crt::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0 2px,var(--scan) 2px 3px);pointer-events:none;mix-blend-mode:overlay}
-    #titlebar{position:absolute;left:0;right:0;top:0;height:28px;background:rgba(255,255,255,.06);display:flex;align-items:center;gap:8px;padding:0 10px;letter-spacing:.3px;backdrop-filter:blur(4px)}
-    .dotbtn{width:12px;height:12px;border-radius:50%;background:#ff5f56;box-shadow:0 0 0 1px rgba(0,0,0,.4) inset}
-    .dotbtn:nth-child(2){background:#ffbd2e}.dotbtn:nth-child(3){background:#27c93f}
-    #title{margin-left:6px;color:#cfd3ff;font-weight:600;font-size:12px;opacity:.8}
-    #stage{position:absolute;inset:28px 0 30px 0}
+    /* Full‑bleed stage */
+    #stage{position:fixed;inset:0;}
     canvas{position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated}
-    #credits{position:absolute;left:10px;right:10px;bottom:6px;height:24px;color:#cfd3ff;opacity:.75;font-size:11px;display:flex;align-items:center;justify-content:space-between;gap:8px;z-index:4}
-    #credits span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #overlay{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(80% 60% at 50% 30%,rgba(255,255,255,.06),rgba(0,0,0,.6));color:#fff;z-index:5}
-    #overlay .card{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.15);padding:14px 18px;border-radius:12px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.5)}
-    #overlay button{margin-top:10px;background:#b896ff;border:0;color:#0a0b10;font-weight:700;padding:10px 16px;border-radius:10px;cursor:pointer}
-    /* Interactive points */
-    .point{position:absolute;border:2px solid rgba(255,255,255,.9);box-shadow:0 0 0 2px rgba(186,149,255,.35),0 0 22px rgba(190,163,255,.8);z-index:3}
+    #poetry{position:absolute;inset:0;z-index:3;pointer-events:none}
+    .poem{position:absolute;font-weight:600;opacity:.92;mix-blend-mode:screen;text-shadow:0 2px 10px rgba(0,0,0,.45);max-width:85%;line-height:1.1;word-break:break-word;overflow-wrap:anywhere}
+    /* Interaction dots */
+    .point{position:absolute;border:2px solid rgba(255,255,255,.9);z-index:4}
     @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(0.85)}}
     @keyframes throb{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
     @keyframes wobble{0%,100%{transform:rotate(0deg)}50%{transform:rotate(6deg)}}
     @keyframes jitter{0%,100%{transform:translate(0,0)}50%{transform:translate(1px,-1px)}}
-    /* Poetry overlay */
-    #poetry{position:absolute;inset:0;z-index:3;pointer-events:none}
-    .poem{position:absolute;font-weight:600;opacity:.92;mix-blend-mode:screen;text-shadow:0 2px 10px rgba(0,0,0,.45);max-width:85%;line-height:1.1;word-break:break-word;overflow-wrap:anywhere}
-    .hint{position:absolute;right:10px;top:34px;font-size:11px;opacity:.5}
+    /* Overlay + footer */
+    #overlay{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(80% 60% at 50% 30%, rgba(255,255,255,.04), rgba(0,0,0,.55));color:#fff;z-index:6}
+    #overlay .card{background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.14);padding:14px 18px;border-radius:12px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+    #overlay button{margin-top:10px;background:#b896ff;border:0;color:#0a0b10;font-weight:700;padding:10px 16px;border-radius:10px;cursor:pointer}
+    #credits{position:absolute;left:10px;right:10px;bottom:env(safe-area-inset-bottom,10px);height:24px;color:#cfd3ff;opacity:.78;font-size:11px;display:flex;align-items:center;justify-content:space-between;gap:8px;z-index:5}
+    #credits span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   </style>
 </head>
 <body>
-  <div id="frame">
-    <div id="crt">
-      <div id="titlebar"><div class="dotbtn"></div><div class="dotbtn"></div><div class="dotbtn"></div><div id="title">Vapor‑Random (rev C)</div><div class="hint">tap = cut • sometimes 2 dots</div></div>
-      <div id="stage">
-        <canvas id="gl"></canvas>
-        <canvas id="img"></canvas>
-        <div id="poetry"></div>
-        <div id="p1" class="point" style="display:none"></div>
-        <div id="p2" class="point" style="display:none"></div>
-        <div id="overlay">
-          <div class="card">
-            <div><strong>Tap to begin</strong></div>
-            <div style="opacity:.85;margin-top:6px">Audio unlocks on first tap. One or two dots per room. Tap anywhere to cut.</div>
-            <button id="begin">Start</button>
-          </div>
-        </div>
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <canvas id="img"></canvas>
+    <div id="poetry"></div>
+    <div id="p1" class="point" style="display:none"></div>
+    <div id="p2" class="point" style="display:none"></div>
+    <div id="overlay">
+      <div class="card">
+        <div><strong>Tap to begin</strong></div>
+        <div style="opacity:.85;margin-top:6px">Audio unlocks on first tap. One or two dots per room. Tap anywhere to cut.</div>
+        <button id="begin">Start</button>
       </div>
-      <div id="credits"><span id="creditText"></span><span id="roomText"></span></div>
     </div>
+    <div id="credits"><span id="creditText"></span><span id="roomText"></span></div>
   </div>
 
 <script>
@@ -69,127 +57,125 @@
   const overlay = document.getElementById('overlay');
   const beginBtn = document.getElementById('begin');
 
-  function fit(){
-    const r = document.getElementById('stage').getBoundingClientRect();
-    [glCanvas, imgCanvas].forEach(c=>{ c.width=Math.floor(r.width); c.height=Math.floor(r.height); });
-  }
-  window.addEventListener('resize', fit); fit();
+  function fit(){ const r = document.getElementById('stage').getBoundingClientRect(); [glCanvas, imgCanvas].forEach(c=>{ c.width=r.width|0; c.height=r.height|0; }); }
+  window.addEventListener('resize', fit, {passive:true}); fit();
 
-  // ---------- AUDIO: pad + melody + PUMPED reverb ----------
+  // ---------- AUDIO (inherits Rev C pumped reverb + melody) ----------
   let ac, master, padBus, melBus, filter, verb, verbSend, delay, fb, started=false;
-  let voices=[]; let vibratoLFO;
-  let currentScale={root:220, major:true}; let melodyTimer=null;
-
-  function initAudio(){
-    ac = new (window.AudioContext||window.webkitAudioContext)();
-    master = ac.createGain(); master.gain.value = 0.15; master.connect(ac.destination);
-    padBus = ac.createGain(); padBus.gain.value = 0.9;
-    melBus = ac.createGain(); melBus.gain.value = 0.9;
-    filter = ac.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value = 2100; filter.Q.value = 0.6;
-    verb = ac.createConvolver(); verb.buffer = makeReverbImpulse(4.2, 4.2); // longer, lusher
-    verbSend = ac.createGain(); verbSend.gain.value = 0.36; // pumped
-    delay = ac.createDelay(1.2); delay.delayTime.value = 0.34 + Math.random()*0.18;
-    fb = ac.createGain(); fb.gain.value = 0.22; delay.connect(fb); fb.connect(delay);
-    padBus.connect(filter); melBus.connect(filter); filter.connect(master);
-    padBus.connect(verbSend); melBus.connect(verbSend); verbSend.connect(verb); verb.connect(master);
-    melBus.connect(delay); delay.connect(master);
-    setPadMode(); startMelody();
-  }
-  function makeReverbImpulse(seconds, decay){
-    const rate=48000,len=Math.floor(rate*seconds); const ctx=(ac||new AudioContext()); const buf=ctx.createBuffer(2,len,rate);
-    for(let c=0;c<2;c++){ const data=buf.getChannelData(c); for(let i=0;i<len;i++){ const t=i/len; data[i]=(Math.random()*2-1)*Math.pow(1-t,decay); } }
-    return buf;
-  }
+  let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
+  function initAudio(){ ac = new (window.AudioContext||window.webkitAudioContext)(); master=ac.createGain(); master.gain.value=0.15; master.connect(ac.destination);
+    padBus=ac.createGain(); padBus.gain.value=0.9; melBus=ac.createGain(); melBus.gain.value=0.9;
+    filter=ac.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=2100; filter.Q.value=0.6;
+    verb=ac.createConvolver(); verb.buffer=makeReverbImpulse(4.2,4.2); verbSend=ac.createGain(); verbSend.gain.value=0.36;
+    delay=ac.createDelay(1.2); delay.delayTime.value=0.34+Math.random()*0.18; fb=ac.createGain(); fb.gain.value=0.22; delay.connect(fb); fb.connect(delay);
+    padBus.connect(filter); melBus.connect(filter); filter.connect(master); padBus.connect(verbSend); melBus.connect(verbSend); verbSend.connect(verb); verb.connect(master); melBus.connect(delay); delay.connect(master);
+    setPadMode(); startMelody(); }
+  function makeReverbImpulse(s,d){ const rate=48000,len=Math.floor(rate*s); const ctx=(ac||new AudioContext()); const buf=ctx.createBuffer(2,len,rate); for(let c=0;c<2;c++){ const data=buf.getChannelData(c); for(let i=0;i<len;i++){ const t=i/len; data[i]=(Math.random()*2-1)*Math.pow(1-t,d);} } return buf; }
   function stopVoices(){ voices.forEach(o=>{ try{o.stop()}catch{} try{o.disconnect()}catch{} }); voices=[]; if(vibratoLFO){ try{vibratoLFO.stop()}catch{} vibratoLFO=null; }
-  }
-  function pickChord(){
-    const roots=[196,220,247,262,294,330]; const root=roots[Math.floor(Math.random()*roots.length)]; const major=Math.random()<0.55;
-    const triad=major?[0,4,7]:[0,3,7]; const add7=Math.random()<0.35?(major?11:10):null; const notes=triad.concat(add7!==null?[add7]:[]);
-    const freqs=notes.map(n=> root*Math.pow(2,n/12)); currentScale={root,major}; return freqs;
-  }
-  function setPadMode(){ if(!ac) return; stopVoices(); const mode=['sine','saw','ring'][Math.floor(Math.random()*3)]; const freqs=pickChord();
-    const pre=ac.createGain(); pre.gain.value=0.7; freqs.forEach((f,i)=>{ const o=ac.createOscillator(); o.type=(mode==='saw')?(i%2?'triangle':'sawtooth'):'sine'; o.frequency.value=f; const g=ac.createGain(); g.gain.value=0.22; o.connect(g); g.connect(pre); o.start(); voices.push(o); });
-    vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.2+Math.random()*0.25; const vib=ac.createGain(); vib.gain.value=4.0; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start();
-    if(mode==='ring'){ const vca=ac.createGain(); const mod=ac.createOscillator(); mod.type='sine'; mod.frequency.value=80+Math.random()*160; const sc=ac.createGain(); sc.gain.value=0.5; const off=ac.createConstantSource(); off.offset.value=0.5; off.start(); pre.connect(vca); vca.connect(padBus); mod.connect(sc); sc.connect(vca.gain); off.connect(vca.gain); mod.start(); } else { pre.connect(padBus); }
-    filter.frequency.setTargetAtTime(mode==='saw'?1400:2300, ac.currentTime, 0.5);
-  }
+  function pickChord(){ const roots=[196,220,247,262,294,330]; const root=roots[Math.floor(Math.random()*roots.length)]; const major=Math.random()<0.55; const tri=major?[0,4,7]:[0,3,7]; const add7=Math.random()<0.35?(major?11:10):null; const notes=tri.concat(add7!==null?[add7]:[]); currentScale={root,major}; return notes.map(n=> root*Math.pow(2,n/12)); }
+  function setPadMode(){ if(!ac) return; stopVoices(); const mode=['sine','saw','ring'][Math.floor(Math.random()*3)]; const freqs=pickChord(); const pre=ac.createGain(); pre.gain.value=0.7; freqs.forEach((f,i)=>{ const o=ac.createOscillator(); o.type=(mode==='saw')?(i%2?'triangle':'sawtooth'):'sine'; o.frequency.value=f; const g=ac.createGain(); g.gain.value=0.22; o.connect(g); g.connect(pre); o.start(); voices.push(o); }); vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.2+Math.random()*0.25; const vib=ac.createGain(); vib.gain.value=4.0; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start(); if(mode==='ring'){ const vca=ac.createGain(); const mod=ac.createOscillator(); mod.type='sine'; mod.frequency.value=80+Math.random()*160; const sc=ac.createGain(); sc.gain.value=0.5; const off=ac.createConstantSource(); off.offset.value=0.5; off.start(); pre.connect(vca); vca.connect(padBus); mod.connect(sc); sc.connect(vca.gain); off.connect(vca.gain); mod.start(); } else { pre.connect(padBus);} filter.frequency.setTargetAtTime(mode==='saw'?1400:2300, ac.currentTime, 0.5); }
   function startMelody(){ if(melodyTimer) clearTimeout(melodyTimer); const tick=()=>{ const interval=340+Math.random()*320; playMelodyNote(); melodyTimer=setTimeout(tick, interval); }; tick(); }
-  function playMelodyNote(){ if(!ac) return; const degrees=currentScale.major?[0,2,4,7,9,12]:[0,3,5,7,10,12]; const step=degrees[Math.floor(Math.random()*degrees.length)]+(Math.random()<0.25?12:0); const freq=currentScale.root*Math.pow(2,step/12);
-    const o=ac.createOscillator(); o.type=Math.random()<0.6?'sine':'triangle'; o.frequency.value=freq; o.detune.value=(Math.random()-0.5)*8; const env=ac.createGain(); env.gain.value=0.0; o.connect(env); env.connect(melBus);
-    const now=ac.currentTime; const a=0.02,d=0.18,r=0.22,lvl=0.32; env.gain.linearRampToValueAtTime(lvl, now+a); env.gain.linearRampToValueAtTime(0.12, now+a+d); env.gain.setTargetAtTime(0.0, now+a+d, r);
-    o.start(now); o.stop(now+a+d+r+0.06); }
+  function playMelodyNote(){ if(!ac) return; const deg=currentScale.major?[0,2,4,7,9,12]:[0,3,5,7,10,12]; const step=deg[Math.floor(Math.random()*deg.length)]+(Math.random()<0.25?12:0); const freq=currentScale.root*Math.pow(2,step/12); const o=ac.createOscillator(); o.type=Math.random()<0.6?'sine':'triangle'; o.frequency.value=freq; o.detune.value=(Math.random()-0.5)*8; const env=ac.createGain(); env.gain.value=0.0; o.connect(env); env.connect(melBus); const now=ac.currentTime; const a=0.02,d=0.18,r=0.22,lvl=0.32; env.gain.linearRampToValueAtTime(lvl, now+a); env.gain.linearRampToValueAtTime(0.12, now+a+d); env.gain.setTargetAtTime(0.0, now+a+d, r); o.start(now); o.stop(now+a+d+r+0.06); }
   function tweakPad(){ if(!ac) return; if(Math.random()<0.35) setPadMode(); filter.frequency.setTargetAtTime(filter.frequency.value + (Math.random()-0.5)*140, ac.currentTime, 0.6); }
-  function tick(){ if(navigator.vibrate) try{navigator.vibrate(18)}catch{} }
 
-  // ---------- WEBGL FRACTAL ----------
-  const gl = glCanvas.getContext('webgl'); let prog,uRes,uTime,uMode,uC;
+  // ---------- WEBGL FRACTAL (now with zoom/pan) ----------
+  const gl = glCanvas.getContext('webgl');
+  let prog, uRes, uTime, uMode, uC, uCenter, uZoom;
   function createShader(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); } return s; }
   function createProgram(vs,fs){ const p=gl.createProgram(); gl.attachShader(p,createShader(gl.VERTEX_SHADER,vs)); gl.attachShader(p,createShader(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); } return p; }
-  const VS=`attribute vec2 a; void main(){ gl_Position = vec4(a,0.0,1.0);} `;
-  const FS=`precision highp float; uniform vec2 res; uniform float t; uniform int mode; uniform vec2 c; vec3 pal(float x){ return vec3(0.72+0.2*cos(6.283*(x+0.00)),0.66+0.2*cos(6.283*(x+0.33)),0.92+0.2*cos(6.283*(x+0.66))); } void main(){ vec2 uv=(gl_FragCoord.xy*2.0-res)/min(res.x,res.y); vec2 z=uv; float it=0.0; int MAX=140; if(mode==0){ vec2 cc=vec2(-0.745,0.186+0.1*sin(t*0.07)); for(int i=0;i<360;i++){ if(i==MAX) break; vec2 z2=vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y)+cc; z=z2; if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX);} } } else { vec2 cc=c; for(int i=0;i<360;i++){ if(i==MAX) break; vec2 z2=vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y)+cc; z=z2; if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX);} } } float x=it/float(MAX); vec3 col=pal(x*0.9+0.1); float scan=0.04*sin(gl_FragCoord.y*3.1415*0.8); gl_FragColor=vec4(col+scan,1.0);} `;
-  function initGL(){ prog=createProgram(VS,FS); const ab=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,ab); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW); const loc=gl.getAttribLocation(prog,'a'); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); gl.enableVertexAttribArray(loc); uRes=gl.getUniformLocation(prog,'res'); uTime=gl.getUniformLocation(prog,'t'); uMode=gl.getUniformLocation(prog,'mode'); uC=gl.getUniformLocation(prog,'c'); }
-  let glMode=0; let glC=[0.355,0.355]; let glOn=false; function renderGL(time){ if(!glOn) return; const w=glCanvas.width,h=glCanvas.height; gl.viewport(0,0,w,h); gl.useProgram(prog); gl.uniform2f(uRes,w,h); gl.uniform1f(uTime,time*0.001); gl.uniform1i(uMode,glMode); gl.uniform2f(uC,glC[0],glC[1]); gl.drawArrays(gl.TRIANGLE_STRIP,0,4); requestAnimationFrame(renderGL); }
+  const VS=`attribute vec2 a; void main(){ gl_Position=vec4(a,0.0,1.0);} `;
+  const FS=`precision highp float; uniform vec2 res; uniform float t; uniform int mode; uniform vec2 c; uniform vec2 center; uniform float zoom; vec3 pal(float x){ return vec3(0.72+0.2*cos(6.283*(x+0.00)),0.66+0.2*cos(6.283*(x+0.33)),0.92+0.2*cos(6.283*(x+0.66))); } void main(){ vec2 uv=(gl_FragCoord.xy - 0.5*res)/min(res.x,res.y); uv = uv/zoom + center; vec2 z=uv; float it=0.0; int MAX=160; if(mode==0){ // mandelbrot
+      vec2 zz=vec2(0.0); vec2 cc=z; for(int i=0;i<400;i++){ if(i==MAX) break; zz=vec2(zz.x*zz.x - zz.y*zz.y, 2.0*zz.x*zz.y)+cc; if(dot(zz,zz)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX);} } }
+    else { // julia
+      vec2 zz=z; vec2 cc=c; for(int i=0;i<400;i++){ if(i==MAX) break; zz=vec2(zz.x*zz.x - zz.y*zz.y, 2.0*zz.x*zz.y)+cc; if(dot(zz,zz)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX);} } }
+    float x=it/float(MAX); vec3 col=pal(x*0.9+0.1); gl_FragColor=vec4(col,1.0);} `;
+  function initGL(){ prog=createProgram(VS,FS); const ab=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,ab); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW); const loc=gl.getAttribLocation(prog,'a'); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); gl.enableVertexAttribArray(loc); uRes=gl.getUniformLocation(prog,'res'); uTime=gl.getUniformLocation(prog,'t'); uMode=gl.getUniformLocation(prog,'mode'); uC=gl.getUniformLocation(prog,'c'); uCenter=gl.getUniformLocation(prog,'center'); uZoom=gl.getUniformLocation(prog,'zoom'); }
+  let glMode=0, glC=[0.355,0.355], glOn=false; let fCenter=[-0.5,0.0], fZoom=1.0, fZoomTarget=1.0, fSpeed=0.0008;
+  function renderGL(time){ if(!glOn) return; const w=glCanvas.width,h=glCanvas.height; gl.viewport(0,0,w,h); gl.useProgram(prog); gl.uniform2f(uRes,w,h); gl.uniform1f(uTime,time*0.001); gl.uniform1i(uMode,glMode); gl.uniform2f(uC, glC[0], glC[1]); // animate zoom towards target
+    fZoom += (fZoomTarget - fZoom) * 0.02; gl.uniform1f(uZoom, fZoom); gl.uniform2f(uCenter, fCenter[0], fCenter[1]); gl.drawArrays(gl.TRIANGLE_STRIP,0,4); requestAnimationFrame(renderGL); }
+  function setFractalView(){ // pick a center near interesting spots; animate zoom in/out
+    const picks=[[-0.745,0.186],[-0.8,0.156],[0.285,0.01],[-0.1,0.651]]; const p=picks[(Math.random()*picks.length)|0]; fCenter=[p[0]+(Math.random()-0.5)*0.05, p[1]+(Math.random()-0.5)*0.05]; fZoom=0.8+Math.random()*0.6; fZoomTarget= 1.4 + Math.random()*2.6; glMode = Math.random()<0.5?0:1; glC=[(Math.random()*0.8-0.4),(Math.random()*0.8-0.4)]; // flip target back and forth
+    let flip=true; function schedule(){ if(!glOn) return; fZoomTarget = flip ? (1.4 + Math.random()*2.6) : (0.5 + Math.random()*0.6); flip=!flip; setTimeout(schedule, 2500 + (Math.random()*2000|0)); } schedule(); }
 
-  // ---------- IMAGE HELPERS ----------
+  // ---------- IMAGE + TK STYLE HELPERS ----------
   const ctx=imgCanvas.getContext('2d');
   function clearImg(){ ctx.clearRect(0,0,imgCanvas.width,imgCanvas.height); }
-  function drawContain(img){ clearImg(); const W=imgCanvas.width,H=imgCanvas.height; const ir=img.width/img.height, cr=W/H; let dw,dh; if(ir>cr){ dw=W; dh=W/ir; } else { dh=H; dw=H*ir; } const dx=(W-dw)/2, dy=(H-dh)/2; ctx.imageSmoothingEnabled=true; ctx.drawImage(img,dx,dy,dw,dh); }
+  function drawContain(img){ clearImg(); const W=imgCanvas.width,H=imgCanvas.height; const ir=img.width/img.height,cr=W/H; let dw,dh; if(ir>cr){ dw=W; dh=W/ir; } else { dh=H; dw=H*ir; } const dx=(W-dw)/2, dy=(H-dh)/2; ctx.imageSmoothingEnabled=true; ctx.drawImage(img,dx,dy,dw,dh); }
   function drawPixelN(img,n){ clearImg(); const off=document.createElement('canvas'); const o=off.getContext('2d'); off.width=n; off.height=n; const W=imgCanvas.width,H=imgCanvas.height; const ir=img.width/img.height,cr=W/H; let sw,sh; if(ir>cr){ sh=img.height; sw=sh*cr; } else { sw=img.width; sh=sw/cr; } const sx=(img.width-sw)/2, sy=(img.height-sh)/2; o.imageSmoothingEnabled=false; o.drawImage(img,sx,sy,sw,sh,0,0,n,n); ctx.imageSmoothingEnabled=false; ctx.drawImage(off,0,0,n,n,0,0,W,H); }
-  function drawZoomRandom(img){ clearImg(); const pxSizes=[1,1,2,2,3,4,6,8,12,16,24,32]; const px=pxSizes[Math.floor(Math.random()*pxSizes.length)]; const W=img.width,H=img.height; const sx=Math.max(0,Math.floor(Math.random()*(W-px))); const sy=Math.max(0,Math.floor(Math.random()*(H-px))); const CW=imgCanvas.width,CH=imgCanvas.height; ctx.imageSmoothingEnabled=false; ctx.drawImage(img,sx,sy,px,px,0,0,CW,CH); return px; }
+  function drawZoomRandom(img){ clearImg(); const pxSizes=[1,1,2,2,3,4,6,8,12,16,24,32]; const px=pxSizes[(Math.random()*pxSizes.length)|0]; const W=img.width,H=img.height; const sx=Math.max(0,(Math.random()*(W-px))|0); const sy=Math.max(0,(Math.random()*(H-px))|0); const CW=imgCanvas.width,CH=imgCanvas.height; ctx.imageSmoothingEnabled=false; ctx.drawImage(img,sx,sy,px,px,0,0,CW,CH); return px; }
 
-  // ---------- PUBLIC‑DOMAIN POETRY (live) ----------
+  // Trapper‑Keeper style room
+  function drawTK(){ clearImg(); const W=imgCanvas.width,H=imgCanvas.height; // background gradient
+    const g=ctx.createLinearGradient(0,0,W,H); const c1=`hsl(${(Math.random()*360)|0},70%,18%)`; const c2=`hsl(${(Math.random()*360)|0},70%,12%)`; g.addColorStop(0,c1); g.addColorStop(1,c2); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // subtle grid
+    ctx.save(); ctx.globalAlpha=0.18; ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=1; const step=40; for(let x=0;x<W;x+=step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); } for(let y=0;y<H;y+=step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); } ctx.restore();
+    // stripes
+    ctx.save(); ctx.globalAlpha=0.25; ctx.fillStyle='rgba(255,255,255,0.08)'; const bandH=H*0.14; ctx.translate(0, H*0.12); ctx.rotate(-Math.PI/18); for(let i=0;i<5;i++){ ctx.fillRect(-W, i*bandH, W*3, bandH*0.35); } ctx.restore();
+    // neon shapes
+    const colors=['#ff71ce','#b967ff','#01cdfe','#05ffa1','#ffd166'];
+    const count=12 + (Math.random()*18|0);
+    for(let i=0;i<count;i++){
+      ctx.save(); ctx.shadowColor=colors[(Math.random()*colors.length)|0]; ctx.shadowBlur=18+Math.random()*22; ctx.fillStyle=ctx.shadowColor; ctx.strokeStyle=ctx.shadowColor; ctx.globalAlpha=0.9; const x=Math.random()*W, y=Math.random()*H; const s=20+Math.random()*120; const shape=['triangle','circle','zig','rect','ring'][(Math.random()*5)|0];
+      if(shape==='triangle'){ ctx.beginPath(); ctx.moveTo(x, y-s*0.6); ctx.lineTo(x-s*0.6, y+s*0.6); ctx.lineTo(x+s*0.6, y+s*0.6); ctx.closePath(); ctx.fill(); }
+      if(shape==='circle'){ ctx.beginPath(); ctx.arc(x,y,s*0.45,0,Math.PI*2); ctx.fill(); }
+      if(shape==='rect'){ ctx.fillRect(x-s*0.6, y-s*0.35, s*1.2, s*0.7); }
+      if(shape==='ring'){ ctx.lineWidth=4; ctx.beginPath(); ctx.arc(x,y,s*0.5,0,Math.PI*2); ctx.stroke(); }
+      if(shape==='zig'){ ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(x-s*0.6, y); for(let k=0;k<6;k++){ const nx=x-s*0.6 + (k+1)*(s*0.2); const ny= y + (k%2? -s*0.35: s*0.35); ctx.lineTo(nx,ny);} ctx.stroke(); }
+      ctx.restore();
+    }
+    // corner sticker
+    ctx.save(); ctx.globalAlpha=0.65; ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.translate(W*0.78, H*0.06); ctx.rotate(-Math.PI/12); ctx.fillRect(-W*0.22,0,W*0.26,H*0.08); ctx.restore();
+  }
+
+  // ---------- Poetry (same behavior, with fit) ----------
   const PD_AUTHORS=['Emily Dickinson','Walt Whitman','William Blake','Christina Rossetti','John Keats','Percy Bysshe Shelley','Robert Browning','Elizabeth Barrett Browning','Ralph Waldo Emerson','Henry Wadsworth Longfellow','John Donne','George Herbert','Andrew Marvell','Thomas Hardy','Gerard Manley Hopkins','Matthew Arnold','Sara Teasdale','A. E. Housman'];
   const OBVIOUS=[/O\s*Captain/i,/Do I contradict myself/i,/Hope is the thing with feathers/i,/red wheel\s*barrow/i,/April is the cruellest month/i];
   async function fetchPoemPD(maxTries=6){ for(let i=0;i<maxTries;i++){ try{ const r=await fetch('https://poetrydb.org/random'); const arr=await r.json(); const p=Array.isArray(arr)?arr[0]:arr; if(!p||!p.lines) continue; if(!PD_AUTHORS.includes(p.author)) continue; const joined=p.lines.join(' '); if(OBVIOUS.some(rx=>rx.test(joined))) continue; return p; }catch(e){} } return null; }
-  function pickFragmentsFromPoem(poem){ const out=[]; const want=Math.random()<0.5?1:2; const lines=poem.lines.filter(line=> line && line.trim().split(/\s+/).length>=3); for(let i=0;i<want && lines.length;i++){ const idx=Math.floor(Math.random()*lines.length); const words=lines.splice(idx,1)[0].trim().split(/\s+/); const len=Math.min(11,Math.max(3,Math.floor(Math.random()*9)+3)); const maxStart=Math.max(0,words.length-len); const start=Math.floor(Math.random()*(maxStart+1)); const frag=words.slice(start,start+len).join(' '); out.push(frag.replace(/\s+/g,' ')); } return {fragments:out, credit:`${poem.title} — ${poem.author} (PD-ish)`}; }
+  function pickFragmentsFromPoem(poem){ const out=[]; const want=Math.random()<0.5?1:2; const lines=poem.lines.filter(line=> line && line.trim().split(/\s+/).length>=3); for(let i=0;i<want && lines.length;i++){ const idx=(Math.random()*lines.length)|0; const words=lines.splice(idx,1)[0].trim().split(/\s+/); const len=Math.min(11,Math.max(3,(Math.random()*9|0)+3)); const maxStart=Math.max(0,words.length-len); const start=(Math.random()*(maxStart+1))|0; const frag=words.slice(start,start+len).join(' '); out.push(frag.replace(/\s+/g,' ')); } return {fragments:out, credit:`${poem.title} — ${poem.author} (PD-ish)`}; }
   const FALLBACK_FRAGS=['violet static under the escalator hum','letters drift like dust in aisle seven','marble light puddles under the palm','coin moon stuck in the food court sky','soft signage echoes after closing time'];
-  async function placePoetry(){ poetryLayer.innerHTML=''; let frags=[]; let credit='Public‑domain verse fragments'; const poem=await fetchPoemPD(); if(poem){ const pick=pickFragmentsFromPoem(poem); frags=pick.fragments; credit=pick.credit; } else { frags=[FALLBACK_FRAGS[Math.floor(Math.random()*FALLBACK_FRAGS.length)]]; }
-    const rect=document.getElementById('stage').getBoundingClientRect(); const margin=18; frags.slice(0,2).forEach(txt=>{ const span=document.createElement('span'); span.className='poem'; span.textContent=txt; let size=14+Math.floor(Math.random()*62); span.style.fontSize=size+'px'; const families=['serif','sans-serif','monospace','cursive','fantasy']; span.style.fontFamily=families[Math.floor(Math.random()*families.length)]; const colors=['#ffb4e6','#b3a6ff','#a1ffd6','#ffd3a6','#c7f0ff','#f6a7ff']; span.style.color=colors[Math.floor(Math.random()*colors.length)]; span.style.letterSpacing=(Math.random()<0.5?-1:1)*Math.floor(Math.random()*2)+'px'; span.style.transform=`rotate(${(Math.random()*30-15).toFixed(1)}deg)`; poetryLayer.appendChild(span); // measure & clamp
-      const br=span.getBoundingClientRect(); const stage=document.getElementById('stage').getBoundingClientRect(); // shrink if too wide/high
-      const availW=stage.width - margin*2; const availH=stage.height - margin*2; let scale=Math.min(1, availW/br.width, availH/br.height); if(scale<1){ size=Math.max(10, Math.floor(size*scale)); span.style.fontSize=size+'px'; }
-      // position after sizing
+  async function placePoetry(){ poetryLayer.innerHTML=''; let frags=[]; let credit='Public‑domain verse fragments'; const poem=await fetchPoemPD(); if(poem){ const pick=pickFragmentsFromPoem(poem); frags=pick.fragments; credit=pick.credit; } else { frags=[FALLBACK_FRAGS[(Math.random()*FALLBACK_FRAGS.length)|0]]; }
+    const stage=document.getElementById('stage').getBoundingClientRect(); const margin=18; frags.slice(0,2).forEach(txt=>{ const span=document.createElement('span'); span.className='poem'; span.textContent=txt; let size=14+((Math.random()*62)|0); span.style.fontSize=size+'px'; const families=['serif','sans-serif','monospace','cursive','fantasy']; span.style.fontFamily=families[(Math.random()*families.length)|0]; const colors=['#ffb4e6','#b3a6ff','#a1ffd6','#ffd3a6','#c7f0ff','#f6a7ff']; span.style.color=colors[(Math.random()*colors.length)|0]; span.style.letterSpacing=((Math.random()<0.5?-1:1)*(Math.random()*2|0))+'px'; span.style.transform=`rotate(${(Math.random()*30-15).toFixed(1)}deg)`; poetryLayer.appendChild(span); const br=span.getBoundingClientRect(); const availW=stage.width - margin*2; const availH=stage.height - margin*2; const scale=Math.min(1, availW/br.width, availH/br.height); if(scale<1){ size=Math.max(10, Math.floor(size*scale)); span.style.fontSize=size+'px'; }
       const w=span.getBoundingClientRect().width, h=span.getBoundingClientRect().height; const x=Math.random()*(stage.width - w - margin*2)+margin; const y=Math.random()*(stage.height - h - margin*2)+margin; span.style.left=x+'px'; span.style.top=y+'px'; }); roomText.textContent = roomText.textContent.split(' • ')[0] + ' • ' + credit; }
 
-  // ---------- RANDOM IMAGES (The Met, CC0) ----------
-  async function fetchMetRandom(){ const terms=['art','flower','sun','river','cloud','portrait','blue','pink','marble','garden','sky']; const term=terms[Math.floor(Math.random()*terms.length)]; const search=await fetch(`https://collectionapi.metmuseum.org/public/collection/v1/search?hasImages=true&isPublicDomain=true&q=${encodeURIComponent(term)}`); const s=await search.json(); if(!s.objectIDs||!s.objectIDs.length) throw new Error('no ids'); const id=s.objectIDs[Math.floor(Math.random()*s.objectIDs.length)]; const obj=await fetch(`https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`); const j=await obj.json(); const url=j.primaryImageSmall||j.primaryImage; if(!url) throw new Error('no image'); const meta={credit:(j.title?j.title+' — ':'')+(j.artistDisplayName? j.artistDisplayName+' — ':'')+'The Met Open Access (CC0)', src:url}; const img=await loadImage(url); return {img, meta}; }
+  // ---------- Random images (The Met, CC0) ----------
+  async function fetchMetRandom(){ const terms=['art','flower','sun','river','cloud','portrait','blue','pink','marble','garden','sky']; const term=terms[(Math.random()*terms.length)|0]; const search=await fetch(`https://collectionapi.metmuseum.org/public/collection/v1/search?hasImages=true&isPublicDomain=true&q=${encodeURIComponent(term)}`); const s=await search.json(); if(!s.objectIDs||!s.objectIDs.length) throw new Error('no ids'); const id=s.objectIDs[(Math.random()*s.objectIDs.length)|0]; const obj=await fetch(`https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`); const j=await obj.json(); const url=j.primaryImageSmall||j.primaryImage; if(!url) throw new Error('no image'); const meta={credit:(j.title?j.title+' — ':'')+(j.artistDisplayName? j.artistDisplayName+' — ':'')+'The Met Open Access (CC0)', src:url}; const img=await loadImage(url); return {img, meta}; }
   function loadImage(url){ return new Promise((res,rej)=>{ const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=rej; im.src=url; }); }
-
-  // ---------- FALLBACK IMAGES ----------
+  // Fallback assets
   const fallbackSVGs=["<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#ffc8f0'/><stop offset='1' stop-color='#b0a6ff'/></linearGradient></defs><rect width='100%' height='100%' fill='url(#g)'/><circle cx='320' cy='240' r='120' fill='rgba(255,255,255,.4)'/><rect x='90' y='80' width='80' height='80' fill='rgba(15,15,35,.5)'/></svg>","<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'><rect width='100%' height='100%' fill='#10122a'/><g fill='#c0a9ff'><rect x='60' y='60' width='140' height='12'/><rect x='60' y='90' width='220' height='12'/><rect x='60' y='120' width='180' height='12'/></g><g fill='#79ffd1' opacity='.6'><circle cx='500' cy='200' r='60'/><circle cx='560' cy='260' r='24'/></g></svg>"];
-  async function fetchFallback(){ const data=fallbackSVGs[Math.floor(Math.random()*fallbackSVGs.length)]; const url='data:image/svg+xml;utf8,'+encodeURIComponent(data); const img=await loadImage(url); return {img, meta:{credit:'Generated placeholder — CC0', src:'inline'}}; }
+  async function fetchFallback(){ const data=fallbackSVGs[(Math.random()*fallbackSVGs.length)|0]; const url='data:image/svg+xml;utf8,'+encodeURIComponent(data); const img=await loadImage(url); return {img, meta:{credit:'Generated placeholder — CC0', src:'inline'}}; }
 
   // ---------- ROOM ENGINE ----------
-  const TYPES=['image-full','image-pixel','image-zoom','abstract-fractal']; let bag=[]; let recentImgs=new Set();
-  function refillBag(){ bag=[]; for(let i=0;i<12;i++){ const t=TYPES[Math.floor(Math.random()*TYPES.length)]; bag.push({id:Date.now()+"-"+i+"-"+Math.random().toString(36).slice(2), type:t}); } }
+  const TYPES=['image-full','image-pixel','image-zoom','abstract-fractal','tk-style']; let bag=[]; let recentImgs=new Set();
+  function refillBag(){ bag=[]; for(let i=0;i<12;i++){ const t=TYPES[(Math.random()*TYPES.length)|0]; bag.push({id:Date.now()+"-"+i+"-"+Math.random().toString(36).slice(2), type:t}); } }
   let busy=false;
-  async function nextRoom(){ if(busy) return; busy=true; tick(); tweakPad(); if(!bag.length) refillBag(); const room=bag.shift();
+  async function nextRoom(){ if(busy) return; busy=true; if(!bag.length) refillBag(); tweakPad(); const room=bag.shift();
+    // dots (more chaotic)
     const stage=document.getElementById('stage').getBoundingClientRect(); const two=Math.random()<0.55; styleDot(p1); const r1=randPoint(stage); placeDot(p1,r1); p1.style.display='block'; if(two){ styleDot(p2); const r2=randPoint(stage); placeDot(p2,r2); p2.style.display='block'; } else { p2.style.display='none'; }
+    // clear
     glOn=false; clearImg(); if(gl){ gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
-    if(room.type.startsWith('image')){ let pack; try{ pack=await fetchMetRandom(); if(recentImgs.has(pack.meta.src)) throw new Error('repeat'); recentImgs.add(pack.meta.src); if(recentImgs.size>40){ const first=recentImgs.values().next().value; recentImgs.delete(first); } } catch(e){ pack=await fetchFallback(); }
+
+    if(room.type==='abstract-fractal'){
+      creditText.textContent='Generated — Fractal (zoom) + PD text'; roomText.textContent='abstract fractal'; glOn=true; setFractalView(); requestAnimationFrame(renderGL); await placePoetry(); p1.onclick=()=>{ cut(); }; p2.onclick=()=>{ setFractalView(); setTimeout(cut,650); }; glCanvas.onclick=()=>{ cut(); };
+    } else if(room.type==='tk-style'){
+      creditText.textContent='Generated — Trapper‑Keeper style'; roomText.textContent='retro shapes'; drawTK(); await placePoetry(); p1.onclick=()=>{ cut(); }; p2.onclick=()=>{ drawTK(); setTimeout(cut,500); }; imgCanvas.onclick=()=>{ cut(); };
+    } else {
+      let pack; try{ pack=await fetchMetRandom(); if(recentImgs.has(pack.meta.src)) throw new Error('repeat'); recentImgs.add(pack.meta.src); if(recentImgs.size>40){ const first=recentImgs.values().next().value; recentImgs.delete(first); } }catch(e){ pack=await fetchFallback(); }
       creditText.textContent=pack.meta.credit; roomText.textContent=room.type.replace('-', ' ');
       if(room.type==='image-full'){ drawContain(pack.img); }
-      if(room.type==='image-pixel'){ const choices=[1,1,2,2,3,4,6,8,12,16,24,32]; const n=choices[Math.floor(Math.random()*choices.length)]; drawPixelN(pack.img,n); roomText.textContent += ` ${n}×${n}`; }
+      if(room.type==='image-pixel'){ const choices=[1,1,2,2,3,4,6,8,12,16,24,32]; const n=choices[(Math.random()*choices.length)|0]; drawPixelN(pack.img,n); roomText.textContent += ` ${n}×${n}`; }
       if(room.type==='image-zoom'){ const px=drawZoomRandom(pack.img); roomText.textContent += ` ${px}px`; }
-      await placePoetry(); p1.onclick=()=>{ cut(); }; p2.onclick=()=>{ transformThenCut(); }; imgCanvas.onclick=()=>{ cut(); };
-    } else { creditText.textContent='Generated — Fractal + PD text'; roomText.textContent='abstract fractal'; glMode=Math.random()<0.5?0:1; glC=[(Math.random()*0.8-0.4),(Math.random()*0.8-0.4)]; glOn=true; requestAnimationFrame(renderGL); await placePoetry(); p1.onclick=()=>{ cut(); }; p2.onclick=()=>{ glC=[(Math.random()*0.8-0.4),(Math.random()*0.8-0.4)]; setTimeout(cut,600); }; glCanvas.onclick=()=>{ cut(); }; }
-    busy=false; }
+      await placePoetry(); p1.onclick=()=>{ cut(); }; p2.onclick=()=>{ glOn=true; setFractalView(); requestAnimationFrame(renderGL); setTimeout(cut,700); }; imgCanvas.onclick=()=>{ cut(); };
+    }
+    busy=false;
+  }
 
   function randPoint(rect){ const x=Math.random()*(rect.width-80)+40; const y=Math.random()*(rect.height-120)+60; return {x,y}; }
-  function styleDot(el){ const size=6+Math.floor(Math.random()*134); // 6–140px (can be tiny)
-    const shape=['circle','square','diamond','triangle','hex','star'][Math.floor(Math.random()*6)];
-    el.style.width=size+'px'; el.style.height=size+'px'; const border=(1+Math.floor(Math.random()*5)); el.style.borderWidth=border+'px'; el.style.borderColor='rgba(255,255,255,.9)'; const glow=0.2+Math.random()*1.0; const bgAlpha=0.08+Math.random()*0.35; const hue=Math.floor(Math.random()*360); el.style.background=`rgba(200,180,255,${bgAlpha})`; el.style.boxShadow=`0 0 0 2px hsla(${hue},70%,80%,${glow*0.55}), 0 0 ${Math.floor(14+glow*36)}px hsla(${hue},80%,75%,${glow})`;
-    const anims=['pulse','throb','wobble','jitter']; el.style.animationName=anims[Math.floor(Math.random()*anims.length)]; el.style.animationDuration=(0.5+Math.random()*2.6).toFixed(2)+'s'; el.style.animationTimingFunction=Math.random()<0.5?'ease-in-out':'ease'; el.style.animationIterationCount='infinite';
-    if(shape==='circle'){ el.style.borderRadius='50%'; el.style.clipPath='none'; el.style.transform='none'; }
-    if(shape==='square'){ el.style.borderRadius=(Math.random()<0.5?'4px':'12px'); el.style.clipPath='none'; el.style.transform='none'; }
-    if(shape==='diamond'){ el.style.borderRadius='10px'; el.style.clipPath='none'; el.style.transform='rotate(45deg)'; }
-    if(shape==='triangle'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 0% 100%, 100% 100%)'; el.style.transform='none'; }
-    if(shape==='hex'){ el.style.borderRadius='0'; el.style.clipPath='polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0% 50%)'; el.style.transform='none'; }
-    if(shape==='star'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)'; el.style.transform='none'; }
-  }
+  function styleDot(el){ const size=6+((Math.random()*154)|0); const shapes=['circle','square','diamond','triangle','hex','star']; const shape=shapes[(Math.random()*shapes.length)|0]; el.style.width=size+'px'; el.style.height=size+'px'; const border=(1+((Math.random()*5)|0)); el.style.borderWidth=border+'px'; el.style.borderColor='rgba(255,255,255,.9)'; const glow=0.2+Math.random()*1.0; const bgAlpha=0.08+Math.random()*0.35; const hue=(Math.random()*360)|0; el.style.background=`rgba(200,180,255,${bgAlpha})`; el.style.boxShadow=`0 0 0 2px hsla(${hue},70%,80%,${glow*0.55}), 0 0 ${Math.floor(14+glow*36)}px hsla(${hue},80%,75%,${glow})`; const anims=['pulse','throb','wobble','jitter']; el.style.animationName=anims[(Math.random()*anims.length)|0]; el.style.animationDuration=(0.5+Math.random()*2.6).toFixed(2)+'s'; el.style.animationTimingFunction=Math.random()<0.5?'ease-in-out':'ease'; el.style.animationIterationCount='infinite'; if(shape==='circle'){ el.style.borderRadius='50%'; el.style.clipPath='none'; el.style.transform='none'; } if(shape==='square'){ el.style.borderRadius=(Math.random()<0.5?'4px':'12px'); el.style.clipPath='none'; el.style.transform='none'; } if(shape==='diamond'){ el.style.borderRadius='10px'; el.style.clipPath='none'; el.style.transform='rotate(45deg)'; } if(shape==='triangle'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 0% 100%, 100% 100%)'; el.style.transform='none'; } if(shape==='hex'){ el.style.borderRadius='0'; el.style.clipPath='polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0% 50%)'; el.style.transform='none'; } if(shape==='star'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)'; el.style.transform='none'; } }
   function placeDot(el,pos){ el.style.left=(pos.x - el.offsetWidth/2)+"px"; el.style.top=(pos.y - el.offsetHeight/2)+"px"; }
-  function transformThenCut(){ glMode=1; glC=[(Math.random()*0.8-0.4),(Math.random()*0.8-0.4)]; glOn=true; requestAnimationFrame(renderGL); setTimeout(()=>{ cut(); },720); }
+  function transformThenCut(){ glMode=1; setFractalView(); requestAnimationFrame(renderGL); setTimeout(()=>{ cut(); },720); }
   function cut(){ nextRoom(); }
 
+  // Start
   beginBtn.addEventListener('click', async ()=>{ overlay.style.display='none'; if(!started){ initAudio(); started=true; } if(gl && !prog){ initGL(); } await nextRoom(); });
 })();
 </script>
