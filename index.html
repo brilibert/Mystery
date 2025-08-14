@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Vapor-Random — Fullscreen Rev L</title>
+  <title>~Things are Inevitable~</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -64,7 +64,7 @@
   }
   window.addEventListener('resize', fit, {passive:true}); fit();
 
-  // ---------- AUDIO (profiles per room + pentatonic melody + reverse ping-pong) ----------
+  // ---------- AUDIO (sine-only pads + optional ring; no sawtooth) ----------
   let ac, master, padBus, melBus, melOut, filter, verb, verbSend, delay, fb, started=false;
   let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
   let ringGroup=null; let panner=null; let panLFO=null; let soundProfile={sine:true, saw:false, ring:false};
@@ -156,29 +156,28 @@
     return notes.map(n=> root*Math.pow(2,n/12));
   }
 
+  // Sawtooth entirely removed; pads are sine-only (optionally ring-modulated)
   function setPadProfile(profile){
     if(!ac) return;
     stopVoices();
 
-    const useSine = profile.sine || (!profile.sine && !profile.saw);
-    const useSaw  = profile.saw;
+    const useSine = true;      // always present
     const useRing = profile.ring;
 
     const pre=ac.createGain(); pre.gain.value=0.7;
     const freqs=pickChord();
 
-    function addBank(type){
-      freqs.forEach((f,i)=>{
+    function addSineBank(){
+      freqs.forEach((f)=>{
         const o=ac.createOscillator();
-        o.type=(type==='saw') ? (i%2?'triangle':'sawtooth') : 'sine';
+        o.type='sine';
         o.frequency.value=f;
-        const g=ac.createGain(); g.gain.value= type==='saw' ? 0.18 : 0.22;
+        const g=ac.createGain(); g.gain.value=0.22;
         o.connect(g); g.connect(pre); o.start(); voices.push(o);
       });
     }
 
-    if(useSine) addBank('sine');
-    if(useSaw)  addBank('saw');
+    if(useSine) addSineBank();
 
     vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.18+Math.random()*0.25;
     const vib=ac.createGain(); vib.gain.value=4.5; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start();
@@ -197,20 +196,18 @@
       pre.connect(padBus);
     }
 
-    filter.frequency.setTargetAtTime(useSaw?1400:2300, ac.currentTime, 0.5);
+    // no saw branch—use the gentler cutoff
+    filter.frequency.setTargetAtTime(2300, ac.currentTime, 0.5);
   }
 
+  // No profiles include "saw" anymore
   function chooseSoundProfileForRoom(){
     const options=[
-      {sine:true,saw:false,ring:false},
-      {sine:false,saw:true,ring:false},
-      {sine:false,saw:false,ring:true},
-      {sine:true,saw:true,ring:false},
-      {sine:true,saw:false,ring:true},
-      {sine:false,saw:true,ring:true},
-      {sine:true,saw:true,ring:true},
+      {sine:true,  saw:false, ring:false},
+      {sine:false, saw:false, ring:true},
+      {sine:true,  saw:false, ring:true},
     ];
-    const weights=[20,20,16,14,14,10,6];
+    const weights=[30,25,20];
     let r=Math.random()*weights.reduce((a,b)=>a+b,0);
     for(let i=0;i<options.length;i++){ if((r-=weights[i])<=0) return options[i]; }
     return options[0];
@@ -709,7 +706,7 @@
     if(busy) return; busy=true;
     if(!bag.length) refillBag();
 
-    // sound variety per page
+    // sound variety per page (no saw in profiles)
     if(ac){
       soundProfile = chooseSoundProfileForRoom();
       setPadProfile(soundProfile);
@@ -734,7 +731,6 @@
     if(gl){ gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
 
     if(room.type==='abstract-fractal'){
-      // no visible attribution for generated rooms
       if(gl && !prog) initGL();
       if(gl){ setFractalView(); renderFractalOnce(); }
       if(ac) setForceScale(lastFractalBright ? 'major' : null);
@@ -763,12 +759,8 @@
       preTone(avgLumaFromImage(pack.img));
 
       // Only show credit for external library images (Met). Suppress for generated fallback.
-      if(pack.meta && pack.meta.src!=='inline'){
-        creditText.textContent=pack.meta.credit;
-      } else {
-        creditText.textContent='';
-      }
-      roomText.textContent=''; // no extra labels
+      if(pack.meta && pack.meta.src!=='inline'){ creditText.textContent=pack.meta.credit; } else { creditText.textContent=''; }
+      roomText.textContent='';
 
       if(room.type==='image-full'){ drawContain(pack.img); }
       if(room.type==='image-pixel'){ const choices=[1,1,2,2,3,4,6,8,12,16,24,32]; const n=choices[(Math.random()*choices.length)|0]; drawPixelN(pack.img,n); }
