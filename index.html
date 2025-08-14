@@ -1,9 +1,10 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Vapor-Random — Fullscreen Rev F</title>
+  <title>~Things are INevitable~</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -60,26 +61,29 @@
   }
   window.addEventListener('resize', fit, {passive:true}); fit();
 
-  // ---------- AUDIO ----------
+  // ---------- AUDIO (profiles per room + pentatonic; major on bright palettes) ----------
   let ac, master, padBus, melBus, filter, verb, verbSend, delay, fb, started=false;
   let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
-  let ringGroup=null; // track ring-mod bits to clean up
+  let ringGroup=null; // track ring-mod components
+  let soundProfile={sine:true, saw:false, ring:false}; // default
+  let forceScaleMode=null; // 'major' | 'minor' | null
 
   function initAudio(){
     ac = new (window.AudioContext||window.webkitAudioContext)();
     master=ac.createGain(); master.gain.value=0.15; master.connect(ac.destination);
-    padBus=ac.createGain(); padBus.gain.value=0.9; melBus=ac.createGain(); melBus.gain.value=0.9;
-    filter=ac.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=2100; filter.Q.value=0.6;
+    padBus=ac.createGain(); padBus.gain.value=0.9; melBus=ac.createGain(); melBus.gain.value=0.95;
+    filter=ac.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=2200; filter.Q.value=0.7;
+
     verb=ac.createConvolver(); verb.buffer=makeReverbImpulse(ac, 4.2, 4.2);
-    verbSend=ac.createGain(); verbSend.gain.value=0.36;
-    delay=ac.createDelay(1.2); delay.delayTime.value=0.34+Math.random()*0.18;
-    fb=ac.createGain(); fb.gain.value=0.22; delay.connect(fb); fb.connect(delay);
+    verbSend=ac.createGain(); verbSend.gain.value=0.40; // wetter so melody rings
+    delay=ac.createDelay(1.3); delay.delayTime.value=0.42+Math.random()*0.2;
+    fb=ac.createGain(); fb.gain.value=0.26; delay.connect(fb); fb.connect(delay);
 
     padBus.connect(filter); melBus.connect(filter); filter.connect(master);
     padBus.connect(verbSend); melBus.connect(verbSend); verbSend.connect(verb); verb.connect(master);
     melBus.connect(delay); delay.connect(master);
 
-    setPadMode();
+    setPadProfile(soundProfile);
     startMelody();
   }
 
@@ -98,9 +102,7 @@
   function stopVoices(){
     voices.forEach(o=>{ try{o.stop()}catch{} try{o.disconnect()}catch{} });
     voices=[];
-
     if(vibratoLFO){ try{vibratoLFO.stop()}catch{} vibratoLFO.disconnect(); vibratoLFO=null; }
-
     if(ringGroup){
       const {mod, off, vca, pre} = ringGroup;
       try{mod.stop()}catch{} try{mod.disconnect()}catch{}
@@ -111,10 +113,13 @@
     }
   }
 
+  function setForceScale(mode){ forceScaleMode=mode; }
+
   function pickChord(){
     const roots=[196,220,247,262,294,330];
     const root=roots[Math.floor(Math.random()*roots.length)];
-    const major=Math.random()<0.55;
+    let major = Math.random()<0.55;
+    if(forceScaleMode==='major') major=true; else if(forceScaleMode==='minor') major=false;
     const tri=major?[0,4,7]:[0,3,7];
     const add7=Math.random()<0.35?(major?11:10):null;
     const notes=tri.concat(add7!==null?[add7]:[]);
@@ -122,29 +127,37 @@
     return notes.map(n=> root*Math.pow(2,n/12));
   }
 
-  function setPadMode(){
+  function setPadProfile(profile){
     if(!ac) return;
     stopVoices();
 
-    const mode=['sine','saw','ring'][Math.floor(Math.random()*3)];
-    const freqs=pickChord();
+    const useSine = profile.sine || (!profile.sine && !profile.saw); // ensure carrier
+    const useSaw  = profile.saw;
+    const useRing = profile.ring;
+
     const pre=ac.createGain(); pre.gain.value=0.7;
+    const freqs=pickChord();
 
-    freqs.forEach((f,i)=>{
-      const o=ac.createOscillator();
-      o.type=(mode==='saw')?(i%2?'triangle':'sawtooth'):'sine';
-      o.frequency.value=f;
-      const g=ac.createGain(); g.gain.value=0.22;
-      o.connect(g); g.connect(pre); o.start(); voices.push(o);
-    });
+    function addBank(type){
+      freqs.forEach((f,i)=>{
+        const o=ac.createOscillator();
+        o.type=(type==='saw') ? (i%2?'triangle':'sawtooth') : 'sine';
+        o.frequency.value=f;
+        const g=ac.createGain(); g.gain.value= type==='saw' ? 0.18 : 0.22;
+        o.connect(g); g.connect(pre); o.start(); voices.push(o);
+      });
+    }
 
-    vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.2+Math.random()*0.25;
-    const vib=ac.createGain(); vib.gain.value=4.0; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start();
+    if(useSine) addBank('sine');
+    if(useSaw)  addBank('saw');
 
-    if(mode==='ring'){
+    vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.18+Math.random()*0.25;
+    const vib=ac.createGain(); vib.gain.value=4.5; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start();
+
+    if(useRing){
       const vca=ac.createGain();
-      const mod=ac.createOscillator(); mod.type='sine'; mod.frequency.value=80+Math.random()*160;
-      const sc=ac.createGain(); sc.gain.value=0.5;
+      const mod=ac.createOscillator(); mod.type='sine'; mod.frequency.value=70+Math.random()*180;
+      const sc=ac.createGain(); sc.gain.value=0.55;
       const off=ac.createConstantSource(); off.offset.value=0.5; off.start();
 
       pre.connect(vca); vca.connect(padBus);
@@ -154,47 +167,59 @@
     } else {
       pre.connect(padBus);
     }
-    filter.frequency.setTargetAtTime(mode==='saw'?1400:2300, ac.currentTime, 0.5);
+
+    filter.frequency.setTargetAtTime(useSaw?1400:2300, ac.currentTime, 0.5);
+  }
+
+  function chooseSoundProfileForRoom(){
+    const options=[
+      {sine:true,saw:false,ring:false},
+      {sine:false,saw:true,ring:false},
+      {sine:false,saw:false,ring:true},
+      {sine:true,saw:true,ring:false},
+      {sine:true,saw:false,ring:true},
+      {sine:false,saw:true,ring:true},
+      {sine:true,saw:true,ring:true},
+    ];
+    const weights=[20,20,16,14,14,10,6];
+    const total=weights.reduce((a,b)=>a+b,0);
+    let r=Math.random()*total;
+    for(let i=0;i<options.length;i++){ if((r-=weights[i])<=0) return options[i]; }
+    return options[0];
   }
 
   function startMelody(){
     if(melodyTimer) clearTimeout(melodyTimer);
-    const tick=()=>{ const interval=340+Math.random()*320; playMelodyNote(); melodyTimer=setTimeout(tick, interval); };
+    const tick=()=>{ const interval=460+Math.random()*420; playMelodyNote(); melodyTimer=setTimeout(tick, interval); };
     tick();
   }
 
+  function pentatonicDegrees(major){ return major ? [0,2,4,7,9,12] : [0,3,5,7,10,12]; }
+
   function playMelodyNote(){
     if(!ac) return;
-    const deg=currentScale.major?[0,2,4,7,9,12]:[0,3,5,7,10,12];
-    const step=deg[Math.floor(Math.random()*deg.length)]+(Math.random()<0.25?12:0);
+    const deg=pentatonicDegrees(currentScale.major);
+    const step=deg[Math.floor(Math.random()*deg.length)] + (Math.random()<0.18?12:0);
     const freq=currentScale.root*Math.pow(2,step/12);
-    const o=ac.createOscillator(); o.type=Math.random()<0.6?'sine':'triangle'; o.frequency.value=freq; o.detune.value=(Math.random()-0.5)*8;
+
+    const o=ac.createOscillator();
+    o.type=Math.random()<0.7?'sine':'triangle';
+    o.frequency.value=freq;
+    o.detune.value=(Math.random()-0.5)*6;
+
     const env=ac.createGain(); env.gain.value=0.0; o.connect(env); env.connect(melBus);
-    const now=ac.currentTime; const a=0.02,d=0.18,r=0.22,lvl=0.32;
+    const now=ac.currentTime; const a=0.02, d=0.22, r=0.65 + Math.random()*0.4, lvl=0.34;
     env.gain.linearRampToValueAtTime(lvl, now+a);
-    env.gain.linearRampToValueAtTime(0.12, now+a+d);
+    env.gain.linearRampToValueAtTime(0.14, now+a+d);
     env.gain.setTargetAtTime(0.0, now+a+d, r);
-    o.start(now); o.stop(now+a+d+r+0.06);
+    o.start(now); o.stop(now+a+d+r+0.1);
   }
 
-  function tweakPad(){
-    if(!ac) return;
-    if(Math.random()<0.35) setPadMode();
-    filter.frequency.setTargetAtTime(filter.frequency.value + (Math.random()-0.5)*140, ac.currentTime, 0.6);
-  }
-
-  // ---------- WEBGL FRACTAL (static view + color themes) ----------
+  // ---------- WEBGL FRACTAL (static view + palettes; deeper zoom) ----------
   const gl = glCanvas.getContext('webgl');
   let prog, uRes, uMode, uC, uCenter, uZoom, uA, uB, uCvec, uD;
   function createShader(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); } return s; }
-  function createProgram(vs,fs){
-    const p=gl.createProgram();
-    gl.attachShader(p,createShader(gl.VERTEX_SHADER,vs));
-    gl.attachShader(p,createShader(gl.FRAGMENT_SHADER,fs));
-    gl.linkProgram(p);
-    if(!gl.getProgramParameter(p,gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); }
-    return p;
-  }
+  function createProgram(vs,fs){ const p=gl.createProgram(); gl.attachShader(p,createShader(gl.VERTEX_SHADER,vs)); gl.attachShader(p,createShader(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); } return p; }
   const VS=`attribute vec2 a; void main(){ gl_Position=vec4(a,0.0,1.0);} `;
   const FS=`precision highp float;
     uniform vec2 res; uniform int mode; uniform vec2 c; uniform vec2 center; uniform float zoom;
@@ -203,16 +228,16 @@
     void main(){
       vec2 uv=(gl_FragCoord.xy - 0.5*res)/min(res.x,res.y);
       uv = uv/zoom + center;
-      float it=0.0; int MAX=180;
+      float it=0.0; int MAX=300; // higher for deep zoom detail
       if(mode==0){
         vec2 z=vec2(0.0); vec2 cc=uv;
-        for(int i=0;i<450;i++){ if(i==MAX) break;
+        for(int i=0;i<520;i++){ if(i==MAX) break;
           z=vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y)+cc;
           if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX); }
         }
       } else {
         vec2 z=uv; vec2 cc=c;
-        for(int i=0;i<450;i++){ if(i==MAX) break;
+        for(int i=0;i<520;i++){ if(i==MAX) break;
           z=vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y)+cc;
           if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX); }
         }
@@ -235,31 +260,32 @@
   let glMode=0, glC2=[0.355,0.355], lastPalette=-1;
   let fCenter=[-0.5,0.0], fZoom=1.0;
   let palA=[0.5,0.5,0.5], palB=[0.5,0.5,0.5], palC=[1,1,1], palD=[0.0,0.33,0.67];
+  let lastFractalBright=false; // used to bias major scale
 
   const PALETTES=[
-    {A:[0.48,0.50,0.56], B:[0.52,0.42,0.32], C:[1.0,1.0,1.0], D:[0.00,0.20,0.33]}, // steel/amber
-    {A:[0.35,0.42,0.55], B:[0.45,0.35,0.25], C:[1.0,1.0,1.0], D:[0.00,0.08,0.20]}, // teal/purple
-    {A:[0.42,0.36,0.56], B:[0.48,0.28,0.48], C:[1.0,1.0,1.0], D:[0.18,0.00,0.25]}, // lavender/pink
-    {A:[0.28,0.30,0.24], B:[0.42,0.36,0.22], C:[1.0,1.0,1.0], D:[0.06,0.12,0.04]}, // earth/olive
-    {A:[0.26,0.28,0.40], B:[0.55,0.45,0.30], C:[1.0,1.0,1.0], D:[0.20,0.26,0.38]}  // deep blue/gold
+    {A:[0.48,0.50,0.56], B:[0.52,0.42,0.32], C:[1.0,1.0,1.0], D:[0.00,0.20,0.33], bright:true},  // steel/amber (bright)
+    {A:[0.35,0.42,0.55], B:[0.45,0.35,0.25], C:[1.0,1.0,1.0], D:[0.00,0.08,0.20], bright:true},  // teal/purple (bright)
+    {A:[0.42,0.36,0.56], B:[0.48,0.28,0.48], C:[1.0,1.0,1.0], D:[0.18,0.00,0.25], bright:true},  // lavender/pink (bright)
+    {A:[0.28,0.30,0.24], B:[0.42,0.36,0.22], C:[1.0,1.0,1.0], D:[0.06,0.12,0.04], bright:false}, // earth/olive (darker)
+    {A:[0.26,0.28,0.40], B:[0.55,0.45,0.30], C:[1.0,1.0,1.0], D:[0.20,0.26,0.38], bright:false}  // deep blue/gold (darker)
   ];
 
   function setFractalView(){
-    const picks=[[-0.745,0.186],[-0.8,0.156],[0.285,0.01],[-0.1,0.651]];
+    const picks=[[-0.745,0.186],[-0.8,0.156],[0.285,0.01],[-0.1,0.651],[-0.235,0.827]];
     const p=picks[(Math.random()*picks.length)|0];
     fCenter=[p[0]+(Math.random()-0.5)*0.05, p[1]+(Math.random()-0.5)*0.05];
 
-    // shallow vs deep (static)
-    const depths=[0.7,0.9,1.2,1.8,2.6,3.8,5.0];
+    // shallow to very deep (static)
+    const depths=[0.7,1.0,1.4,2.0,3.0,4.5,6.0,8.0,12.0,16.0];
     fZoom=depths[(Math.random()*depths.length)|0];
 
-    glMode = Math.random()<0.5?0:1; // Mandelbrot or Julia
+    glMode = Math.random()<0.5?0:1; // Mandelbrot / Julia
     glC2=[(Math.random()*0.8-0.4),(Math.random()*0.8-0.4)];
 
-    // pick a palette different from the last one
+    // color palette (avoid back-to-back repeat)
     let idx; do{ idx=(Math.random()*PALETTES.length)|0; } while(idx===lastPalette && PALETTES.length>1);
     lastPalette=idx;
-    const pal=PALETTES[idx]; palA=pal.A; palB=pal.B; palC=pal.C; palD=pal.D;
+    const pal=PALETTES[idx]; palA=pal.A; palB=pal.B; palC=pal.C; palD=pal.D; lastFractalBright=pal.bright;
   }
 
   function renderFractalOnce(){
@@ -318,7 +344,24 @@
     if(!grainPattern) grainPattern=ctx.createPattern(grainCanvas,'repeat');
   }
 
-  // Trapper-Keeper style (subtle, faux 3D + raster)
+  // helpers for shading
+  function shade(hex, amt){
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    let r=parseInt(m[1],16),g2=parseInt(m[2],16),b=parseInt(m[3],16);
+    r=Math.max(0,Math.min(255, r + amt*255)); g2=Math.max(0,Math.min(255, g2 + amt*255)); b=Math.max(0,Math.min(255, b + amt*255));
+    return `rgb(${r|0},${g2|0},${b|0})`;
+  }
+  function roundRect(ctx,x,y,w,h,r){
+    const rr=Math.min(r, w/2, h/2);
+    ctx.beginPath(); ctx.moveTo(x+rr,y);
+    ctx.arcTo(x+w,y,x+w,y+h,rr);
+    ctx.arcTo(x+w,y+h,x,y+h,rr);
+    ctx.arcTo(x,y+h,x,y,rr);
+    ctx.arcTo(x,y,x+w,y,rr);
+    ctx.closePath();
+  }
+
+  // Trapper‑Keeper style (subtle, faux 3D + raster) with one clear main element
   function drawTK(){
     clearImg(); ensureGrain();
     const W=imgCanvas.width,H=imgCanvas.height;
@@ -340,7 +383,6 @@
     ctx.restore();
 
     const colors=['#ff71ce','#b967ff','#01cdfe','#05ffa1','#ffd166'];
-    const N = 6 + (Math.random()*8|0);
 
     function extrude(drawFn, x,y, rot, depth, base){
       ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
@@ -352,61 +394,49 @@
       ctx.globalAlpha=0.22; ctx.strokeStyle='#ffffff'; ctx.lineWidth=2; drawFn('stroke');
       ctx.restore();
     }
-    function shade(hex, amt){
-      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-      let r=parseInt(m[1],16),g2=parseInt(m[2],16),b=parseInt(m[3],16);
-      r=Math.max(0,Math.min(255, r + amt*255)); g2=Math.max(0,Math.min(255, g2 + amt*255)); b=Math.max(0,Math.min(255, b + amt*255));
-      return `rgb(${r|0},${g2|0},${b|0})`;
+
+    function drawSphere(x,y,s,rot,base){
+      ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
+      const r = s*0.5; const rg = ctx.createRadialGradient(-r*0.2,-r*0.2,r*0.2, 0,0,r);
+      rg.addColorStop(0, shade(base,0.25)); rg.addColorStop(1, shade(base,-0.35));
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill(); ctx.restore();
     }
 
+    // MAIN element — larger but not massive
+    const mainKind=['prism','pyramid','tube','sphere','ring','block'][(Math.random()*6|0)];
+    const mainColor=colors[(Math.random()*colors.length)|0];
+    const mainS = Math.min(Math.max(Math.min(W,H)*0.22, 120), 260); // ~visibly largest
+    const mainX = W*(0.25+Math.random()*0.5); const mainY = H*(0.25+Math.random()*0.5);
+    const mainRot = (Math.random()*Math.PI*2); const mainDepth = 8 + Math.random()*16;
+
+    if(mainKind==='sphere') drawSphere(mainX,mainY,mainS,mainRot,mainColor);
+    else if(mainKind==='tube') extrude((mode)=>{ ctx.lineWidth=3; const w=mainS*1.2,h=mainS*0.45; roundRect(ctx,-w/2,-h/2,w,h, h*0.5); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, mainX,mainY,mainRot,mainDepth,mainColor);
+    else if(mainKind==='pyramid') extrude((mode)=>{ ctx.beginPath(); ctx.moveTo(0, -mainS*0.6); ctx.lineTo(-mainS*0.55, mainS*0.5); ctx.lineTo(mainS*0.55, mainS*0.5); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, mainX,mainY,mainRot,mainDepth,mainColor);
+    else if(mainKind==='prism') extrude((mode)=>{ const w=mainS,h=mainS*0.55; ctx.beginPath(); ctx.moveTo(-w/2, -h/2); ctx.lineTo(w/2, -h/2); ctx.lineTo(w/2, h/2); ctx.lineTo(-w/2, h/2); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, mainX,mainY,mainRot,mainDepth,mainColor);
+    else if(mainKind==='ring'){ ctx.save(); ctx.translate(mainX,mainY); ctx.rotate(mainRot); ctx.lineWidth=6; ctx.strokeStyle=mainColor; ctx.globalAlpha=0.95; ctx.beginPath(); ctx.arc(0,0,mainS*0.5,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+    else { extrude((mode)=>{ const w=mainS*0.9,h=mainS*0.7; ctx.beginPath(); ctx.rect(-w/2,-h/2,w,h); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, mainX,mainY,mainRot,mainDepth,mainColor); }
+
+    // SECONDARY elements — smaller & varied
+    const N = 6 + (Math.random()*8|0);
     for(let i=0;i<N;i++){
       const base = colors[(Math.random()*colors.length)|0];
       const x = Math.random()*W, y = Math.random()*H;
       const rot = (Math.random()*Math.PI*2);
-      const s = 40 + Math.random()*160;
+      const s = 30 + Math.random()*120; // smaller range
       const depth = 6 + Math.random()*12;
       const kind = ['prism','sphere','tube','pyramid','ring','block','zig'][(Math.random()*7)|0];
 
-      if(kind==='sphere'){
-        ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
-        const r = s*0.5; const rg = ctx.createRadialGradient(-r*0.2,-r*0.2,r*0.2, 0,0,r);
-        rg.addColorStop(0, shade(base,0.25)); rg.addColorStop(1, shade(base,-0.35));
-        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
-        ctx.restore();
-
-      } else if(kind==='tube'){
-        extrude((mode)=>{ ctx.lineWidth=3; const w=s*1.2,h=s*0.45; roundRect(ctx,-w/2,-h/2,w,h, h*0.5); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-
-      } else if(kind==='ring'){
-        ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.lineWidth=6; ctx.strokeStyle=base; ctx.globalAlpha=0.9; ctx.beginPath(); ctx.arc(0,0,s*0.5,0,Math.PI*2); ctx.stroke(); ctx.restore();
-
-      } else if(kind==='pyramid'){
-        extrude((mode)=>{ ctx.beginPath(); ctx.moveTo(0, -s*0.6); ctx.lineTo(-s*0.55, s*0.5); ctx.lineTo(s*0.55, s*0.5); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-
-      } else if(kind==='prism'){
-        extrude((mode)=>{ const w=s,h=s*0.55; ctx.beginPath(); ctx.moveTo(-w/2, -h/2); ctx.lineTo(w/2, -h/2); ctx.lineTo(w/2, h/2); ctx.lineTo(-w/2, h/2); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-
-      } else if(kind==='zig'){
-        ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.lineWidth=5; ctx.strokeStyle=base; ctx.globalAlpha=0.85; ctx.beginPath();
-        ctx.moveTo(-s*0.6,0); for(let k=0;k<6;k++){ const nx=-s*0.6 + (k+1)*(s*0.2); const ny=(k%2? -s*0.35: s*0.35); ctx.lineTo(nx,ny);} ctx.stroke(); ctx.restore();
-
-      } else { // block
-        extrude((mode)=>{ const w=s*0.9,h=s*0.7; ctx.beginPath(); ctx.rect(-w/2,-h/2,w,h); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-      }
+      if(kind==='sphere') drawSphere(x,y,s,rot,base);
+      else if(kind==='tube') extrude((mode)=>{ ctx.lineWidth=3; const w=s*1.2,h=s*0.45; roundRect(ctx,-w/2,-h/2,w,h, h*0.5); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
+      else if(kind==='ring'){ ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.lineWidth=5; ctx.strokeStyle=base; ctx.globalAlpha=0.9; ctx.beginPath(); ctx.arc(0,0,s*0.5,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+      else if(kind==='pyramid') extrude((mode)=>{ ctx.beginPath(); ctx.moveTo(0, -s*0.6); ctx.lineTo(-s*0.55, s*0.5); ctx.lineTo(s*0.55, s*0.5); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
+      else if(kind==='prism') extrude((mode)=>{ const w=s,h=s*0.55; ctx.beginPath(); ctx.moveTo(-w/2, -h/2); ctx.lineTo(w/2, -h/2); ctx.lineTo(w/2, h/2); ctx.lineTo(-w/2, h/2); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
+      else if(kind==='zig') { ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.lineWidth=5; ctx.strokeStyle=base; ctx.globalAlpha=0.85; ctx.beginPath(); ctx.moveTo(-s*0.6,0); for(let k=0;k<6;k++){ const nx=-s*0.6 + (k+1)*(s*0.2); const ny=(k%2? -s*0.35: s*0.35); ctx.lineTo(nx,ny);} ctx.stroke(); ctx.restore(); }
+      else { extrude((mode)=>{ const w=s*0.9,h=s*0.7; ctx.beginPath(); ctx.rect(-w/2,-h/2,w,h); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base); }
     }
 
     // raster/grain overlay
     ctx.save(); ctx.globalAlpha=0.14; ctx.fillStyle=grainPattern; ctx.fillRect(0,0,W,H); ctx.restore();
-  }
-
-  function roundRect(ctx,x,y,w,h,r){
-    const rr=Math.min(r, w/2, h/2);
-    ctx.beginPath(); ctx.moveTo(x+rr,y);
-    ctx.arcTo(x+w,y,x+w,y+h,rr);
-    ctx.arcTo(x+w,y+h,x,y+h,rr);
-    ctx.arcTo(x,y+h,x,y,rr);
-    ctx.arcTo(x,y,x+w,y,rr);
-    ctx.closePath();
   }
 
   // ---------- Poetry ----------
@@ -466,7 +496,7 @@
       span.style.transform=`rotate(${(Math.random()*30-15).toFixed(1)}deg)`;
       poetryLayer.appendChild(span);
 
-      // ensure on-screen (auto downsize)
+      // ensure on-screen
       const br=span.getBoundingClientRect();
       const availW=stage.width - margin*2; const availH=stage.height - margin*2;
       const scale=Math.min(1, availW/br.width, availH/br.height);
@@ -480,7 +510,7 @@
     roomText.textContent = roomText.textContent.split(' • ')[0] + ' • ' + credit;
   }
 
-  // ---------- Random images (The Met CC0) ----------
+  // ---------- Random images (Met CC0) ----------
   async function fetchMetRandom(){
     const terms=['art','flower','sun','river','cloud','portrait','blue','pink','marble','garden','sky'];
     const term=terms[(Math.random()*terms.length)|0];
@@ -503,7 +533,6 @@
     });
   }
 
-  // fallback assets
   const fallbackSVGs=[
     "<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#ffc8f0'/><stop offset='1' stop-color='#b0a6ff'/></linearGradient></defs><rect width='100%' height='100%' fill='url(#g)'/><circle cx='320' cy='240' r='120' fill='rgba(255,255,255,.4)'/><rect x='90' y='80' width='80' height='80' fill='rgba(15,15,35,.5)'/></svg>",
     "<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'><rect width='100%' height='100%' fill='#10122a'/><g fill='#c0a9ff'><rect x='60' y='60' width='140' height='12'/><rect x='60' y='90' width='220' height='12'/><rect x='60' y='120' width='180' height='12'/></g><g fill='#79ffd1' opacity='.6'><circle cx='500' cy='200' r='60'/><circle cx='560' cy='260' r='24'/></g></svg>"
@@ -518,49 +547,48 @@
   // ---------- ROOM ENGINE ----------
   const TYPES=['image-full','image-pixel','image-zoom','abstract-fractal','tk-style'];
   let bag=[]; let recentImgs=new Set();
-  function refillBag(){
-    bag=[]; for(let i=0;i<12;i++){ const t=TYPES[(Math.random()*TYPES.length)|0]; bag.push({id:Date.now()+"-"+i+"-"+Math.random().toString(36).slice(2), type:t}); }
-  }
+  function refillBag(){ bag=[]; for(let i=0;i<12;i++){ const t=TYPES[(Math.random()*TYPES.length)|0]; bag.push({id:Date.now()+"-"+i+"-"+Math.random().toString(36).slice(2), type:t}); } }
   let busy=false;
 
   async function nextRoom(){
     if(busy) return; busy=true;
     if(!bag.length) refillBag();
-    tweakPad();
 
-    let room=bag.shift();
+    // sound profile per page
+    soundProfile = chooseSoundProfileForRoom();
 
-    // if WebGL unavailable, replace fractal room with TK
-    if(room.type==='abstract-fractal' && !gl){ room={...room, type:'tk-style'}; }
+    const room=bag.shift();
 
-    // dots (ensure visible before sizing/placing)
+    // bias major on brighter visuals (fractals marked bright; images random guess; TK dark)
+    let roomIsBright=false;
+
+    // dots first
     const stage=document.getElementById('stage').getBoundingClientRect();
     const two=Math.random()<0.55;
-
     p1.style.display='block'; styleDot(p1); placeDot(p1,stage);
     if(two){ p2.style.display='block'; styleDot(p2); placeDot(p2,stage); } else { p2.style.display='none'; }
 
-    // clear canvases
-    clearImg();
-    if(gl){ gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
+    // clear
+    clearImg(); if(gl){ gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
 
     if(room.type==='abstract-fractal'){
       creditText.textContent='Generated — Fractal (static) + PD text'; roomText.textContent='abstract fractal';
       if(gl && !prog) initGL();
-      if(gl){
-        setFractalView();
-        renderFractalOnce();
-      }
+      if(gl){ setFractalView(); renderFractalOnce(); roomIsBright=lastFractalBright; }
+      // select profile & scale based on brightness
+      if(ac){ setForceScale(roomIsBright ? 'major' : null); setPadProfile(soundProfile); }
       await placePoetry();
       p1.onclick=()=>{ cut(); };
-      p2.onclick=()=>{ if(gl){ setFractalView(); renderFractalOnce(); } setTimeout(cut,650); };
+      p2.onclick=()=>{ if(gl){ setFractalView(); renderFractalOnce(); roomIsBright=lastFractalBright; if(ac){ setForceScale(roomIsBright?'major':null); setPadProfile(soundProfile);} } setTimeout(cut,650); };
       glCanvas.onclick=()=>{ cut(); };
 
     } else if(room.type==='tk-style'){
-      creditText.textContent='Generated — Trapper-Keeper (subtle/3D/raster)'; roomText.textContent='retro shapes';
-      drawTK(); await placePoetry();
+      creditText.textContent='Generated — Trapper‑Keeper (subtle/3D/main)'; roomText.textContent='retro shapes';
+      drawTK(); roomIsBright=false; // TK backgrounds are dark by design
+      if(ac){ setForceScale(null); setPadProfile(soundProfile); }
+      await placePoetry();
       p1.onclick=()=>{ cut(); };
-      p2.onclick=()=>{ drawTK(); setTimeout(cut,500); };
+      p2.onclick=()=>{ drawTK(); if(ac){ setForceScale(null); setPadProfile(soundProfile);} setTimeout(cut,500); };
       imgCanvas.onclick=()=>{ cut(); };
 
     } else {
@@ -577,11 +605,19 @@
       if(room.type==='image-pixel'){ const choices=[1,1,2,2,3,4,6,8,12,16,24,32]; const n=choices[(Math.random()*choices.length)|0]; drawPixelN(pack.img,n); roomText.textContent += ` ${n}×${n}`; }
       if(room.type==='image-zoom'){ const px=drawZoomRandom(pack.img); roomText.textContent += ` ${px}px`; }
 
+      // rough guess for brightness on image rooms
+      roomIsBright = Math.random()<0.4;
+      if(ac){ setForceScale(roomIsBright ? 'major' : null); setPadProfile(soundProfile); }
+
       await placePoetry();
       p1.onclick=()=>{ cut(); };
       p2.onclick=()=>{ if(gl){ setFractalView(); renderFractalOnce(); } setTimeout(cut,700); };
       imgCanvas.onclick=()=>{ cut(); };
     }
+
+    // gentle filter motion each page
+    if(ac){ filter && filter.frequency && filter.frequency.setTargetAtTime(filter.frequency.value + (Math.random()-0.5)*130, ac.currentTime, 0.7); }
+
     busy=false;
   }
 
@@ -603,7 +639,6 @@
     el.style.animationTimingFunction=Math.random()<0.5?'ease-in-out':'ease';
     el.style.animationIterationCount='infinite';
 
-    // shape
     if(shape==='circle'){ el.style.borderRadius='50%'; el.style.clipPath='none'; el.style.transform='none'; }
     if(shape==='square'){ el.style.borderRadius=(Math.random()<0.5?'4px':'12px'); el.style.clipPath='none'; el.style.transform='none'; }
     if(shape==='diamond'){ el.style.borderRadius='10px'; el.style.clipPath='none'; el.style.transform='rotate(45deg)'; }
@@ -636,13 +671,18 @@
     try{
       console.assert(!!document.getElementById('stage'),'stage missing');
       console.assert(glCanvas && imgCanvas,'canvases missing');
-      console.assert(typeof window.addEventListener==='function','events missing');
-    }catch(e){ console.warn('Smoke tests:',e); }
+      console.assert(typeof window.addEventListener==='function','events available');
+      // test pentatonic helper
+      const maj=pentatonicDegrees(true), min=pentatonicDegrees(false);
+      console.assert(Array.isArray(maj)&&maj.length>=5,'pentatonic major array');
+      console.assert(Array.isArray(min)&&min.length>=5,'pentatonic minor array');
+      // test sound profile chooser shape
+      const sp=chooseSoundProfileForRoom();
+      console.assert(['sine','saw','ring'].some(k=>sp[k]===true),'sound profile has at least one');
+    }catch(e){ console.warn('Smoke tests:', e); }
   })();
 })();
 </script>
+
 </body>
 </html>
-
-
-
