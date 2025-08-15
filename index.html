@@ -276,7 +276,7 @@
 
   // ----------------- Poetry (non-overlap) -----------------
   const PD_AUTHORS=['Emily Dickinson','Walt Whitman','William Blake','Christina Rossetti','John Keats','Percy Bysshe Shelley','Robert Browning','Elizabeth Barrett Browning','Ralph Waldo Emerson','Henry Wadsworth Longfellow','John Donne','George Herbert','Andrew Marvell','Thomas Hardy','Gerard Manley Hopkins','Matthew Arnold','Sara Teasdale','A. E. Housman'];
-  const OBVIOUS[/O\s*Captain/i,/Do I contradict myself/i,/Hope is the thing with feathers/i,/red wheel\s*barrow/i,/April is the cruellest month/i];
+  const OBVIOUS = [/O\s*Captain/i,/Do I contradict myself/i,/Hope is the thing with feathers/i,/red wheel\s*barrow/i,/April is the cruellest month/i];
   async function fetchPoemPD(maxTries=6){ for(let i=0;i<maxTries;i++){ try{ const r=await fetch('https://poetrydb.org/random'); const arr=await r.json(); const p=Array.isArray(arr)?arr[0]:arr; if(!p||!p.lines) continue; if(!PD_AUTHORS.includes(p.author)) continue; const joined=p.lines.join(' '); if(OBVIOUS.some(rx=>rx.test(joined))) continue; return p; }catch(e){} } return null; }
   function pickFragmentsFromPoem(poem){ const out=[]; const want=Math.random()<0.5?1:2; const lines=poem.lines.filter(line=> line && line.trim().split(/\s+/).length>=3); for(let i=0;i<want && lines.length;i++){ const idx=(Math.random()*lines.length)|0; const words=lines.splice(idx,1)[0].trim().split(/\s+/); const len=Math.min(11,Math.max(3,(Math.random()*9|0)+3)); const maxStart=Math.max(0,words.length-len); const start=(Math.random()*(maxStart+1))|0; const frag=words.slice(start,start+len).join(' '); out.push(frag.replace(/\s+/g,' ')); } return {fragments:out, credit:`${poem.title} — ${poem.author}`}; }
   const FALLBACK_FRAGS=['violet static under the escalator hum','letters drift like dust in aisle seven','marble light puddles under the palm','coin moon stuck in the food court sky','soft signage echoes after closing time'];
@@ -395,6 +395,3 @@
 </script>
 </body>
 </html>
-
-
-
