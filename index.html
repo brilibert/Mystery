@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Vapor-Random — Fullscreen Rev N3 (probability engine)</title>
+  <title>Vapor-Random — Fullscreen Rev N4 (pads 10% mute per room)</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -89,7 +89,8 @@
       ringProbPerRoom: 0.35,
       changeOnRoomProb: 0.80,
       reharmWithinRoomProb: 0.20,
-      reharmDelaySec: [10, 18]
+      reharmDelaySec: [10, 18],
+      muteProb: 0.10             /* NEW: 10% of rooms = melody-only */
     },
     ambience: {
       lushProb: 0.25,
@@ -126,6 +127,7 @@
   let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
   let ringGroup=null; let panner=null; let forceScaleMode=null;
   let panDriftActive=false, lushActive=false, reharmTimer=null, lastRing=false;
+  let padMuted=false, lastPadMuted=false;  // NEW
 
   function initAudio(){
     if(ac) return;
@@ -223,10 +225,12 @@
     return iv.map(n=> root*Math.pow(2,n/12));
   }
 
+  // NEW: respect padMuted; if muted, stop and don't recreate
   function setPadProfile({ring}){
     if(!ac) return;
     stopVoices();
     lastRing = !!ring;
+    if(padMuted){ return; } // no pad voices this room
 
     const pre=ac.createGain(); pre.gain.value=0.7;
     const freqs=pickChord();
@@ -287,24 +291,20 @@
   function doMelTick(){
     if(!ac) return;
 
-    // forced rests: phrase cooldown or breath
     if(phraseRestTicks>0){ phraseRestTicks--; pushRecent(0); return; }
     if(breathRestLeft>0){ breathRestLeft--; pushRecent(0); return; }
 
-    // periodic breath
     if(--breathCountdown<=0){
       breathRestLeft = Math.max(1, Math.round(pickRange(SCENE_PROFILE.melody.breathRestTicks)));
       breathCountdown = Math.max(2, Math.round(pickRange(SCENE_PROFILE.melody.breathEveryTicks)));
       pushRecent(0); return;
     }
 
-    // maybe start a phrase
     if(!phraseActive && roll(SCENE_PROFILE.melody.phraseProb)){
       phraseActive = true;
       phraseNotesLeft = Math.max(2, Math.round(pickRange(SCENE_PROFILE.melody.phraseNoteCount)));
     }
 
-    // compute note probability
     let p = baseNoteProb;
     if(phraseActive) p = Math.max(p, 0.75);
     if(busyCooldown>0){ p = Math.min(p, SCENE_PROFILE.melody.busyDropIfGT.noteProb); busyCooldown--; }
@@ -337,7 +337,6 @@
 
     const freq = currentScale.root * Math.pow(2, step/12);
 
-    // envelope and sustain
     const peak = 0.24 + Math.random()*0.18;
     const a = 0.018 + Math.random()*0.03;
     const d = 0.18 + Math.random()*0.08;
@@ -356,7 +355,6 @@
     env.gain.setTargetAtTime(0.0, now+a+d, r);
     o.start(now); o.stop(now+a+d+r+0.15);
 
-    // rare soft grace echo
     if(roll(SCENE_PROFILE.melody.graceProb)){
       const o2=ac.createOscillator();
       const up = Math.random()<0.5? 2 : -2;
@@ -786,14 +784,20 @@
       verbSend.gain.value = lushActive ? 0.58 : 0.40;
       fb.gain.value = lushActive ? 0.33 : 0.26;
 
-      if(roll(SCENE_PROFILE.pads.changeOnRoomProb)){
+      // NEW: decide if pads are muted this room
+      padMuted = roll(SCENE_PROFILE.pads.muteProb);
+
+      // change pad on room if: probability says so OR mute state changed vs last room
+      const shouldChangePad = roll(SCENE_PROFILE.pads.changeOnRoomProb) || (padMuted !== lastPadMuted);
+      if(shouldChangePad){
         const useRing = roll(SCENE_PROFILE.pads.ringProbPerRoom);
         setPadProfile({ring:useRing});
+        lastPadMuted = padMuted;
       }
       gentlyMoveFilter();
 
       if(reharmTimer){ clearTimeout(reharmTimer); reharmTimer=null; }
-      if(roll(SCENE_PROFILE.pads.reharmWithinRoomProb)){
+      if(!padMuted && roll(SCENE_PROFILE.pads.reharmWithinRoomProb)){
         const ms = Math.round(pickRange(SCENE_PROFILE.pads.reharmDelaySec)*1000);
         reharmTimer = setTimeout(()=>{ setPadProfile({ring:lastRing}); }, ms);
       }
