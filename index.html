@@ -220,7 +220,7 @@
   async function loadFoleyClips(){
     if(!ac) return;
     try{
-      foleyBus = ac.createGain(); foleyBus.gain.value = 0.5; // slightly softer overall
+      foleyBus = ac.createGain(); foleyBus.gain.value = 0.6; // slightly softer overall
       const fVerbSend = ac.createGain(); fVerbSend.gain.value = 0.20;
       foleyBus.connect(fVerbSend); fVerbSend.connect(verb);
       foleyBus.connect(master);
@@ -431,5 +431,6 @@
 </script>
 </body>
 </html>
+
 
 
