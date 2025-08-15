@@ -11,17 +11,21 @@
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none}
     #stage{position:fixed;inset:0}
     canvas{position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated}
+
     /* anti-flash */
     #tint{position:absolute;inset:0;z-index:2;pointer-events:none;background:rgba(0,0,0,0);transition:background-color 220ms linear}
+
     /* poetry layer */
     #poetry{position:absolute;inset:0;z-index:3;pointer-events:none}
     .poem{position:absolute;font-weight:600;opacity:.92;mix-blend-mode:screen;text-shadow:0 2px 10px rgba(0,0,0,.45);max-width:85%;line-height:1.1;word-break:break-word;overflow-wrap:anywhere}
+
     /* interaction dots */
     .point{position:absolute;border:2px solid rgba(255,255,255,.9);z-index:4;cursor:pointer}
     @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(0.85)}}
     @keyframes throb{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
     @keyframes wobble{0%,100%{transform:rotate(0deg)}50%{transform:rotate(6deg)}}
     @keyframes jitter{0%,100%{transform:translate(0,0)}50%{transform:translate(1px,-1px)}}
+
     /* tap transition */
     .ripple{position:absolute;left:0;top:0;width:24px;height:24px;border-radius:50%;pointer-events:none;z-index:5;mix-blend-mode:screen;background:radial-gradient(circle at center, rgba(255,255,255,.55), rgba(255,255,255,0) 60%);transform:translate(-50%,-50%) scale(.3);opacity:0;animation:rippleExpand 520ms ease-out forwards}
     @keyframes rippleExpand{0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}40%{opacity:.55}100%{opacity:0;transform:translate(-50%,-50%) scale(35)}}
@@ -74,7 +78,7 @@
   }
   window.addEventListener('resize', fit, {passive:true}); fit();
 
-  // ---------- AUDIO (no saw; pads avoid tritone; livelier melody) ----------
+  // ---------- AUDIO (tritone-safe pads; Lydian melody when major; no saw) ----------
   let ac, master, padBus, melBus, melOut, filter, verb, verbSend, delay, fb, started=false;
   let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
   let ringGroup=null; let panner=null; let forceScaleMode=null;
@@ -102,10 +106,8 @@
     padBus.connect(verbSend); melOut.connect(verbSend); verbSend.connect(verb); verb.connect(master);
     melOut.connect(delay); delay.connect(master);
 
-    setPadProfile({ring:false}); // sine bed
+    setPadProfile({ring:false});
     startMelody();
-
-    ac.onstatechange = ()=>{ /* resume handled on gesture */ };
   }
 
   // iOS unlock helpers
@@ -142,7 +144,6 @@
 
   // --- chord helpers (avoid tritone) ---
   function hasTritone(intervals){
-    // intervals: semitone offsets mod 12
     for(let i=0;i<intervals.length;i++){
       for(let j=i+1;j<intervals.length;j++){
         const a=intervals[i]%12, b=intervals[j]%12;
@@ -153,7 +154,6 @@
     return false;
   }
   function chooseIntervals(major){
-    // candidates are consonant; add6 only for major (minor+add6 creates a tritone: 3 vs 9)
     const types = major ? ['maj','sus2','sus4','add6'] : ['min','sus2','sus4','add9'];
     for(let tries=0; tries<8; tries++){
       const t = types[(Math.random()*types.length)|0];
@@ -162,8 +162,8 @@
       else if(t==='min') iv=[0,3,7];
       else if(t==='sus2') iv=[0,2,7];
       else if(t==='sus4') iv=[0,5,7];
-      else if(t==='add6') iv=[0,4,7,9];       // major only
-      else if(t==='add9') iv=major?[0,4,7,14]:[0,3,7,14]; // 9 = 2 above octave
+      else if(t==='add6') iv=[0,4,7,9];
+      else if(t==='add9') iv=major?[0,4,7,14]:[0,3,7,14];
       else iv=major?[0,4,7]:[0,3,7];
       const mods = iv.map(n=>((n%12)+12)%12);
       if(!hasTritone(mods)) return iv;
@@ -177,7 +177,6 @@
     let major=Math.random()<0.55;
     if(forceScaleMode==='major') major=true;
     if(forceScaleMode==='minor') major=false;
-
     const iv = chooseIntervals(major);
     currentScale={root,major};
     return iv.map(n=> root*Math.pow(2,n/12));
@@ -187,7 +186,6 @@
     if(!ac) return;
     stopVoices();
     const useRing = !!profile.ring;
-
     const pre=ac.createGain(); pre.gain.value=0.7;
     const freqs=pickChord();
 
@@ -220,21 +218,29 @@
     const tick=()=>{ const interval=420+Math.random()*420; playMelodyNote(); melodyTimer=setTimeout(tick, interval); };
     tick();
   }
-  function pentatonicDegrees(major){ return major ? [0,2,4,7,9,12] : [0,3,5,7,10,12]; }
+
+  // --- Melody degrees: Lydian over major pads (raised 4th), minor pentatonic over minor pads ---
+  function melodicDegrees(){
+    // Lydian: 0, 2, 4, ♯4(6), 5(7), 6(9), 7(11), 8(12)
+    return currentScale.major ? [0,2,4,6,7,9,11,12] : [0,3,5,7,10,12];
+  }
+
   function playMelodyNote(){
     if(!ac) return;
-    // pick degree, sometimes leap a 5th or octave
-    const deg=pentatonicDegrees(currentScale.major);
-    let step=deg[(Math.random()*deg.length)|0];
-    if(Math.random()<0.22) step += 12;           // octave up
-    else if(Math.random()<0.18) step += 7;       // fifth up
-    const freq=currentScale.root*Math.pow(2,step/12);
+    const deg = melodicDegrees();
 
-    // dynamic envelope + slight pan shift
-    const peak=0.26 + Math.random()*0.22;
-    const a=0.015 + Math.random()*0.03;
-    const d=0.18 + Math.random()*0.08;
-    const r=0.70 + Math.random()*0.55;
+    // choose degree, with occasional leaps (octave or fifth)
+    let step = deg[(Math.random()*deg.length)|0];
+    if (Math.random() < 0.22) step += 12;      // octave up
+    else if (Math.random() < 0.18) step += 7;  // fifth up
+
+    const freq = currentScale.root * Math.pow(2, step/12);
+
+    // dynamic envelope + slight pan drift
+    const peak = 0.26 + Math.random()*0.22;
+    const a = 0.015 + Math.random()*0.03;
+    const d = 0.18 + Math.random()*0.08;
+    const r = 0.70 + Math.random()*0.55;
     if(panner){ try{ panner.pan.setTargetAtTime((Math.random()*1.2-0.6), ac.currentTime, 0.08);}catch{} }
 
     const o=ac.createOscillator(); o.type=Math.random()<0.7?'sine':'triangle'; o.frequency.value=freq; o.detune.value=(Math.random()-0.5)*6;
@@ -245,7 +251,7 @@
     env.gain.setTargetAtTime(0.0, now+a+d, r);
     o.start(now); o.stop(now+a+d+r+0.12);
 
-    // occasional grace echo note (soft, short)
+    // occasional soft grace echo note
     if(Math.random()<0.22){
       const o2=ac.createOscillator();
       const up = Math.random()<0.5? 2 : -2;
@@ -259,9 +265,10 @@
       o2.start(now+dly); o2.stop(now+dly+0.8);
     }
   }
+
   function gentlyMoveFilter(){ if(!ac) return; filter.frequency.setTargetAtTime(filter.frequency.value + (Math.random()-0.5)*130, ac.currentTime, 0.7); }
 
-  // ---------- WEBGL FRACTAL (Mandelbrot / Julia / Burning Ship / Tricorn) ----------
+  // ---------- WEBGL FRACTAL (Mandelbrot / Julia / Burning Ship / Tricorn; static) ----------
   const gl = glCanvas.getContext('webgl');
   let prog, uRes, uMode, uC, uCenter, uZoom, uA, uB, uCvec, uD;
   function createShader(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); } return s; }
@@ -612,7 +619,6 @@
     const img=await loadImage(url);
     return {img, meta};
   }
-
   async function fetchUnsplashRandom(){
     const topics=['abstract','texture','vaporwave','neon','clouds','pattern','marble','gradient','retro','geometry','minimal','pastel'];
     const pick = []; for(let i=0;i<3;i++){ pick.push(topics[(Math.random()*topics.length)|0]); }
@@ -620,7 +626,6 @@
     const img=await loadImage(url);
     return {img, meta:{credit:'Unsplash — Random', src:img.src||url}};
   }
-
   async function fetchCommonsRandom(){
     const api=`https://commons.wikimedia.org/w/api.php?action=query&generator=random&grnnamespace=6&grnlimit=1&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=2000&format=json&origin=*`;
     const r=await fetch(api); const j=await r.json();
@@ -634,7 +639,6 @@
     const title = (page.title||'').replace(/^File:/,'');
     return {img, meta:{credit:`${title} — Wikimedia Commons`, src:url}};
   }
-
   async function fetchExternalRandom(){
     const picks=[ {fn:fetchMetRandom, w:0.4}, {fn:fetchUnsplashRandom, w:0.35}, {fn:fetchCommonsRandom, w:0.25} ];
     let r=Math.random();
@@ -688,7 +692,7 @@
     styleDot(p1); placeDot(p1,stageRect); p1.style.display='block';
     if(two){ styleDot(p2); placeDot(p2,stageRect); p2.style.display='block'; } else { p2.style.display='none'; }
 
-    // clear UI labels by default
+    // clear UI labels by default (credits only for external images later)
     creditText.textContent=''; roomText.textContent='';
 
     // clear canvases
@@ -722,10 +726,8 @@
         }
       }catch(e){ pack=await fetchFallback(); }
 
-      // anti-flash pre-tone
+      // anti-flash pre-tone and optional credit
       preTone(avgLumaFromImage(pack.img));
-
-      // show credit only for external images (not generated)
       if(pack.meta && pack.meta.src!=='inline'){ creditText.textContent=pack.meta.credit; }
 
       if(room.type==='image-full'){ drawContain(pack.img); }
