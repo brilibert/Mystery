@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>ॐ~Things Are Inevitable~ॐ</title>
+  <title>Vapor-Random — Rev N10 (foley toned, space clips)</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -84,7 +84,7 @@
   const SCENE_PROFILE = {
     pads: {
       majorProb: 0.55,
-      qualities: { major: { triad:0.60, sus2:0.10, sus4:0.10, add6:0.10 }, minor: { triad:0.60, sus2:0.10, sus4:0.10, add9:0.10 } },
+      qualities: { major: { triad:0.70, sus2:0.10, sus4:0.10, add6:0.10 }, minor: { triad:0.65, sus2:0.10, sus4:0.10, add9:0.10 } },
       ringProbPerRoom: 0.35,
       changeOnRoomProb: 0.80,
       reharmWithinRoomProb: 0.20,
@@ -100,7 +100,8 @@
       busyDropIfGT: { window:8, notes:6, noteProb:0.30, forTicks:6 },
       underLiftIfLT: { window:8, notes:2, noteProb:0.70, forTicks:4 }
     },
-    foley: { ambientProb: 0.30, tapProb: 0.70 },
+    // ↓ toned down
+    foley: { ambientProb: 0.12, tapProb: 0.40 },
     darkGuard: { minLuma: 0.14, maxFetchTries: 3 }
   };
   function roll(p){ return Math.random() < p; }
@@ -129,7 +130,7 @@
     setPadProfile({ring:false});
     startMelody();
 
-    // Load CC0/PD foley clips (curated)
+    // Load CC0/PD foley (adds NASA/spacey results)
     loadFoleyClips();
   }
   function makeReverbImpulse(ctx, seconds, decay){ const rate=ctx.sampleRate,len=Math.floor(rate*seconds); const buf=ctx.createBuffer(2,len,rate); for(let c=0;c<2;c++){ const data=buf.getChannelData(c); for(let i=0;i<len;i++){ const t=i/len; data[i]=(Math.random()*2-1)*Math.pow(1-t,decay);} } return buf; }
@@ -171,8 +172,9 @@
     else if(type==='camera'){ const base = 800 + Math.random()*1200; const o=ac.createOscillator(); o.type='sine'; o.frequency.value=base; const g=ac.createGain(); g.gain.value=0; o.connect(g); g.connect(verbSend); g.connect(master); g.gain.linearRampToValueAtTime(0.5, now+0.01); g.gain.exponentialRampToValueAtTime(0.001, now+0.4); o.start(now); o.stop(now+0.5); const o2=ac.createOscillator(); const g2=ac.createGain(); o2.type='triangle'; o2.frequency.value=base*0.75; o2.connect(g2); g2.connect(verbSend); g2.connect(master); g2.gain.setValueAtTime(0, now+0.06); g2.gain.linearRampToValueAtTime(0.35, now+0.08); g2.gain.exponentialRampToValueAtTime(0.001, now+0.48); o2.start(now+0.06); o2.stop(now+0.55); duck(0.8, 180); }
   }
 
-  // ---------- CC0/PD Foley (curated Wikimedia Commons) ----------
+  // ---------- CC0/PD Foley (Commons + a few NASA/spacey) ----------
   let foleyBus, foleyClips=[], foleyReady=false;
+  // Known-safe file titles (if any fail, we just skip them)
   const COMMONS_TITLES = [
     'File:Sound_Effect_-_Door_Bell.ogg',
     'File:Sound_Effects_-_Applause_after_a_concert.ogg',
@@ -182,7 +184,11 @@
     'File:Contact_type.ogg',
     'File:Ba_dum_bum_stings.ogg',
     'File:Walking-on-gravel-38827.ogg',
-    'File:Nl-flip-overvellen.ogg'
+    'File:Nl-flip-overvellen.ogg',
+    // spacey guesses (Public Domain NASA uploads on Commons; OK if some miss)
+    'File:Voyager_1_Plasma_Wave_Sounds.ogg',
+    'File:Cassini_Saturn_Radio_Emissions.ogg',
+    'File:Jupiter_radio_emissions.ogg'
   ];
   async function commonsFileUrls(titles){
     const api = 'https://commons.wikimedia.org/w/api.php';
@@ -200,16 +206,34 @@
     }
     return urls;
   }
+  async function commonsSearchAudio(term, limit=8){
+    const api = 'https://commons.wikimedia.org/w/api.php';
+    const qs  = '?action=query&format=json&origin=*&list=search&srnamespace=6&srlimit='+limit+'&srsearch='+encodeURIComponent(term);
+    try{
+      const r = await fetch(api + qs);
+      const j = await r.json();
+      const titles = (j.query && j.query.search ? j.query.search : []).map(s=>s.title);
+      if(!titles.length) return [];
+      return await commonsFileUrls(titles);
+    }catch(_){ return []; }
+  }
   async function loadFoleyClips(){
     if(!ac) return;
     try{
-      foleyBus = ac.createGain(); foleyBus.gain.value = 0.6;
-      const fVerbSend = ac.createGain(); fVerbSend.gain.value = 0.22;
+      foleyBus = ac.createGain(); foleyBus.gain.value = 0.5; // slightly softer overall
+      const fVerbSend = ac.createGain(); fVerbSend.gain.value = 0.20;
       foleyBus.connect(fVerbSend); fVerbSend.connect(verb);
       foleyBus.connect(master);
 
-      const urls = await commonsFileUrls(COMMONS_TITLES);
+      // base set
+      const base = await commonsFileUrls(COMMONS_TITLES);
+      // sprinkle in “space” searches (NASA PD)
+      const space1 = await commonsSearchAudio('NASA plasma wave sound ogg', 6);
+      const space2 = await commonsSearchAudio('space radio emission ogg', 6);
+
+      const urls = [...base, ...space1, ...space2];
       const chosen = urls.sort(()=>Math.random()-0.5).slice(0, 12);
+
       for (const u of chosen){
         try{
           const ab = await fetch(u, {mode:'cors'}).then(r=>r.arrayBuffer());
@@ -220,21 +244,33 @@
       foleyReady = foleyClips.length>0;
     }catch(_){ foleyReady=false; }
   }
-  function playFoleyClip({gain=0.28, rate=1.0}={}){
+  function playFoleyClip({gain=0.22, rate=1.0, maxSec=1.2}={}){
     if(!foleyReady) return false;
     const pick = foleyClips[(Math.random()*foleyClips.length)|0];
-    const src = ac.createBufferSource();
-    src.buffer = pick.buf;
-    src.playbackRate.value = rate * (0.95 + Math.random()*0.1);
-    const g = ac.createGain(); g.gain.value = gain*(0.8 + Math.random()*0.4);
-    src.connect(g); g.connect(foleyBus);
-    src.start();
+    const src = ac.createBufferSource(); src.buffer = pick.buf; src.playbackRate.value = rate * (0.95 + Math.random()*0.1);
+
+    // tame harshness a bit: gentle HP+LP
+    const hp = ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=80 + Math.random()*140;
+    const lp = ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2400 + Math.random()*2200;
+
+    const g = ac.createGain();
+    g.gain.value = 0.0;
+
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(foleyBus);
+
+    const now = ac.currentTime;
+    const stopAt = now + Math.min(src.buffer.duration, maxSec); // hard cap so nothing lingers
+    g.gain.linearRampToValueAtTime(gain*(0.8 + Math.random()*0.4), now+0.03);
+    g.gain.setTargetAtTime(0.0001, stopAt-0.15, 0.10);
+
+    src.start(now);
+    src.stop(stopAt);
     return true;
   }
   function maybePlayAmbientFoley(){
     if(!ac) return;
     if(roll(SCENE_PROFILE.foley.ambientProb)){
-      if(!playFoleyClip({gain:0.16, rate: 0.9 + Math.random()*0.2})){
+      if(!playFoleyClip({gain:0.16, rate: 0.9 + Math.random()*0.2, maxSec:1.4})){
         playSynthFoley('whoosh'); // fallback
       }
     }
@@ -242,7 +278,7 @@
   function maybeTapFoley(){
     if(!ac) return;
     if(roll(SCENE_PROFILE.foley.tapProb)){
-      if(!playFoleyClip({gain:0.32, rate: 0.95 + Math.random()*0.15})){
+      if(!playFoleyClip({gain:0.20 + Math.random()*0.08, rate: 0.95 + Math.random()*0.15, maxSec:1.0})){
         playSynthFoley('camera'); // fallback
       }
     }
@@ -347,7 +383,7 @@
     // disable canvas clicks; dots only
     glCanvas.onclick = null; imgCanvas.onclick = null; stageEl.onclick = null;
 
-    // start gentle evolution of dots in-place
+    // evolve dots a bit
     startEvolvingDots();
 
     // ambient CC0/PD foley sometimes (fallback to synth if none loaded)
