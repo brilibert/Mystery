@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>~Things are Inevitable~</title>
+  <title>~Things Are Inevitable~</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -74,10 +74,10 @@
   }
   window.addEventListener('resize', fit, {passive:true}); fit();
 
-  // ---------- AUDIO (no saw; sine + optional ring) ----------
+  // ---------- AUDIO (no saw; pads avoid tritone; livelier melody) ----------
   let ac, master, padBus, melBus, melOut, filter, verb, verbSend, delay, fb, started=false;
   let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
-  let ringGroup=null; let panner=null; let revPing=null; let forceScaleMode=null;
+  let ringGroup=null; let panner=null; let forceScaleMode=null;
 
   function initAudio(){
     if(ac) return;
@@ -140,17 +140,47 @@
   }
   function setForceScale(mode){ forceScaleMode=mode; }
 
+  // --- chord helpers (avoid tritone) ---
+  function hasTritone(intervals){
+    // intervals: semitone offsets mod 12
+    for(let i=0;i<intervals.length;i++){
+      for(let j=i+1;j<intervals.length;j++){
+        const a=intervals[i]%12, b=intervals[j]%12;
+        let d=(b - a) % 12; if(d<0) d+=12;
+        if(d===6) return true;
+      }
+    }
+    return false;
+  }
+  function chooseIntervals(major){
+    // candidates are consonant; add6 only for major (minor+add6 creates a tritone: 3 vs 9)
+    const types = major ? ['maj','sus2','sus4','add6'] : ['min','sus2','sus4','add9'];
+    for(let tries=0; tries<8; tries++){
+      const t = types[(Math.random()*types.length)|0];
+      let iv;
+      if(t==='maj') iv=[0,4,7];
+      else if(t==='min') iv=[0,3,7];
+      else if(t==='sus2') iv=[0,2,7];
+      else if(t==='sus4') iv=[0,5,7];
+      else if(t==='add6') iv=[0,4,7,9];       // major only
+      else if(t==='add9') iv=major?[0,4,7,14]:[0,3,7,14]; // 9 = 2 above octave
+      else iv=major?[0,4,7]:[0,3,7];
+      const mods = iv.map(n=>((n%12)+12)%12);
+      if(!hasTritone(mods)) return iv;
+    }
+    return major?[0,4,7]:[0,3,7];
+  }
+
   function pickChord(){
     const roots=[196,220,247,262,294,330];
     const root=roots[(Math.random()*roots.length)|0];
     let major=Math.random()<0.55;
     if(forceScaleMode==='major') major=true;
     if(forceScaleMode==='minor') major=false;
-    const tri=major?[0,4,7]:[0,3,7];
-    const add7=Math.random()<0.35?(major?11:10):null;
-    const notes=tri.concat(add7!==null?[add7]:[]);
+
+    const iv = chooseIntervals(major);
     currentScale={root,major};
-    return notes.map(n=> root*Math.pow(2,n/12));
+    return iv.map(n=> root*Math.pow(2,n/12));
   }
 
   function setPadProfile(profile){
@@ -187,22 +217,47 @@
 
   function startMelody(){
     if(melodyTimer) clearTimeout(melodyTimer);
-    const tick=()=>{ const interval=460+Math.random()*420; playMelodyNote(); melodyTimer=setTimeout(tick, interval); };
+    const tick=()=>{ const interval=420+Math.random()*420; playMelodyNote(); melodyTimer=setTimeout(tick, interval); };
     tick();
   }
   function pentatonicDegrees(major){ return major ? [0,2,4,7,9,12] : [0,3,5,7,10,12]; }
   function playMelodyNote(){
     if(!ac) return;
+    // pick degree, sometimes leap a 5th or octave
     const deg=pentatonicDegrees(currentScale.major);
-    const step=deg[(Math.random()*deg.length)|0] + (Math.random()<0.18?12:0);
+    let step=deg[(Math.random()*deg.length)|0];
+    if(Math.random()<0.22) step += 12;           // octave up
+    else if(Math.random()<0.18) step += 7;       // fifth up
     const freq=currentScale.root*Math.pow(2,step/12);
+
+    // dynamic envelope + slight pan shift
+    const peak=0.26 + Math.random()*0.22;
+    const a=0.015 + Math.random()*0.03;
+    const d=0.18 + Math.random()*0.08;
+    const r=0.70 + Math.random()*0.55;
+    if(panner){ try{ panner.pan.setTargetAtTime((Math.random()*1.2-0.6), ac.currentTime, 0.08);}catch{} }
+
     const o=ac.createOscillator(); o.type=Math.random()<0.7?'sine':'triangle'; o.frequency.value=freq; o.detune.value=(Math.random()-0.5)*6;
     const env=ac.createGain(); env.gain.value=0.0; o.connect(env); env.connect(melBus);
-    const now=ac.currentTime; const a=0.02,d=0.22,r=0.65 + Math.random()*0.4,lvl=0.34;
-    env.gain.linearRampToValueAtTime(lvl, now+a);
-    env.gain.linearRampToValueAtTime(0.14, now+a+d);
+    const now=ac.currentTime;
+    env.gain.linearRampToValueAtTime(peak, now+a);
+    env.gain.linearRampToValueAtTime(peak*0.42, now+a+d);
     env.gain.setTargetAtTime(0.0, now+a+d, r);
-    o.start(now); o.stop(now+a+d+r+0.1);
+    o.start(now); o.stop(now+a+d+r+0.12);
+
+    // occasional grace echo note (soft, short)
+    if(Math.random()<0.22){
+      const o2=ac.createOscillator();
+      const up = Math.random()<0.5? 2 : -2;
+      o2.type=Math.random()<0.6?'sine':'triangle';
+      o2.frequency.value=currentScale.root*Math.pow(2,(step+up)/12);
+      const env2=ac.createGain(); env2.gain.value=0.0; o2.connect(env2); env2.connect(melBus);
+      const dly=0.08 + Math.random()*0.14;
+      env2.gain.linearRampToValueAtTime(peak*0.5, now+dly+a*0.7);
+      env2.gain.linearRampToValueAtTime(peak*0.2, now+dly+a*0.7+0.12);
+      env2.gain.setTargetAtTime(0.0, now+dly+a*0.7+0.12, 0.35);
+      o2.start(now+dly); o2.stop(now+dly+0.8);
+    }
   }
   function gentlyMoveFilter(){ if(!ac) return; filter.frequency.setTargetAtTime(filter.frequency.value + (Math.random()-0.5)*130, ac.currentTime, 0.7); }
 
@@ -465,288 +520,7 @@
     for(let i=0;i<maxTries;i++){
       try{
         const r=await fetch('https://poetrydb.org/random');
-        const arr=await r.json();
-        const p=Array.isArray(arr)?arr[0]:arr;
-        if(!p||!p.lines) continue;
-        if(!PD_AUTHORS.includes(p.author)) continue;
-        const joined=p.lines.join(' ');
-        if(OBVIOUS.some(rx=>rx.test(joined))) continue;
-        return p;
-      }catch(e){}
-    }
-    return null;
-  }
-  function pickFragmentsFromPoem(poem){
-    const out=[]; const want=Math.random()<0.5?1:2;
-    const lines=poem.lines.filter(line=> line && line.trim().split(/\s+/).length>=3);
-    for(let i=0;i<want && lines.length;i++){
-      const idx=(Math.random()*lines.length)|0;
-      const words=lines.splice(idx,1)[0].trim().split(/\s+/);
-      const len=Math.min(11,Math.max(3,(Math.random()*9|0)+3));
-      const maxStart=Math.max(0,words.length-len);
-      const start=(Math.random()*(maxStart+1))|0;
-      const frag=words.slice(start,start+len).join(' ');
-      out.push(frag.replace(/\s+/g,' '));
-    }
-    return {fragments:out, credit:`${poem.title} — ${poem.author}`};
-  }
-  const FALLBACK_FRAGS=['violet static under the escalator hum','letters drift like dust in aisle seven','marble light puddles under the palm','coin moon stuck in the food court sky','soft signage echoes after closing time'];
-
-  function overlaps(a,b,pad){ return !(a.x + a.w + pad <= b.x || a.x >= b.x + b.w + pad || a.y + a.h + pad <= b.y || a.y >= b.y + b.h + pad); }
-
-  async function placePoetry(){
-    poetryLayer.innerHTML='';
-    let frags=[];
-    const poem=await fetchPoemPD();
-    if(poem){ const pick=pickFragmentsFromPoem(poem); frags=pick.fragments; }
-    else { frags=[FALLBACK_FRAGS[(Math.random()*FALLBACK_FRAGS.length)|0]]; }
-
-    const stage=stageEl.getBoundingClientRect();
-    const margin=18, pad=10; const placed=[];
-    for(const txt of frags.slice(0,2)){
-      const span=document.createElement('span'); span.className='poem'; span.textContent=txt;
-      let size=14+((Math.random()*62)|0); span.style.fontSize=size+'px';
-      const families=['serif','sans-serif','monospace','cursive','fantasy']; span.style.fontFamily=families[(Math.random()*families.length)|0];
-      const colors=['#ffb4e6','#b3a6ff','#a1ffd6','#ffd3a6','#c7f0ff','#f6a7ff']; span.style.color=colors[(Math.random()*colors.length)|0];
-      span.style.letterSpacing=((Math.random()<0.5?-1:1)*(Math.random()*2|0))+'px';
-      span.style.transform=`rotate(${(Math.random()*30-15).toFixed(1)}deg)`;
-      poetryLayer.appendChild(span);
-
-      let br=span.getBoundingClientRect();
-      const availW=stage.width - margin*2, availH=stage.height - margin*2;
-      let scale=Math.min(1, availW/br.width, availH/br.height);
-      if(scale<1){ size=Math.max(10, Math.floor(size*scale)); span.style.fontSize=size+'px'; br=span.getBoundingClientRect(); }
-
-      let placedOK=false, attempts=80, shrinkSteps=2;
-      while(!placedOK && attempts>0){
-        const w=br.width, h=br.height;
-        const x=Math.random()*(stage.width - w - margin*2)+margin;
-        const y=Math.random()*(stage.height - h - margin*2)+margin;
-        const rect={x,y,w,h};
-        if(!placed.some(r=>overlaps(rect,r,pad))){
-          span.style.left=x+'px'; span.style.top=y+'px'; placed.push(rect); placedOK=true; break;
-        }
-        attempts--;
-        if(attempts===0 && shrinkSteps>0){
-          size=Math.max(10, Math.floor(size*0.9));
-          span.style.fontSize=size+'px';
-          br=span.getBoundingClientRect();
-          attempts=80; shrinkSteps--;
-        }
-      }
-      if(!placedOK){
-        const w=br.width, h=br.height;
-        let y=margin; if(placed.length){ y = Math.min(stage.height - h - margin, placed[placed.length-1].y + placed[placed.length-1].h + pad); }
-        const rect={x:margin,y,w,h}; span.style.left=rect.x+'px'; span.style.top=rect.y+'px'; placed.push(rect);
-      }
-    }
-  }
-
-  // ---------- Images (Met + Unsplash + Wikimedia Commons) ----------
-  async function fetchMetRandom(){
-    const terms=['art','flower','sun','river','cloud','portrait','blue','pink','marble','garden','sky','texture','pattern','neon'];
-    const term=terms[(Math.random()*terms.length)|0];
-    const search=await fetch(`https://collectionapi.metmuseum.org/public/collection/v1/search?hasImages=true&isPublicDomain=true&q=${encodeURIComponent(term)}`);
-    const s=await search.json();
-    if(!s.objectIDs||!s.objectIDs.length) throw new Error('no ids');
-    const id=s.objectIDs[(Math.random()*s.objectIDs.length)|0];
-    const obj=await fetch(`https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`);
-    const j=await obj.json(); const url=j.primaryImageSmall||j.primaryImage;
-    if(!url) throw new Error('no image');
-    const meta={credit:(j.title?j.title+' — ':'')+(j.artistDisplayName? j.artistDisplayName+' — ':'')+'The Met Open Access (CC0)', src:url};
-    const img=await loadImage(url);
-    return {img, meta};
-  }
-
-  // Unsplash (no API key): random redirect endpoint. Canvas reads may taint; we guard in code.
-  async function fetchUnsplashRandom(){
-    const topics=['abstract','texture','vaporwave','neon','clouds','pattern','marble','gradient','retro','geometry','minimal','pastel'];
-    const pick = [];
-    for(let i=0;i<3;i++){ pick.push(topics[(Math.random()*topics.length)|0]); }
-    const url=`https://source.unsplash.com/1600x900/?${encodeURIComponent(pick.join(','))}&sig=${Date.now()}${Math.floor(Math.random()*1000)}`;
-    const img=await loadImage(url);
-    return {img, meta:{credit:'Unsplash — Random', src:img.src||url}};
-  }
-
-  // Wikimedia Commons: random File (namespace 6), prefer ~2000px thumb
-  async function fetchCommonsRandom(){
-    const api=`https://commons.wikimedia.org/w/api.php?action=query&generator=random&grnnamespace=6&grnlimit=1&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=2000&format=json&origin=*`;
-    const r=await fetch(api); const j=await r.json();
-    if(!j.query||!j.query.pages) throw new Error('no page');
-    const page = Object.values(j.query.pages)[0];
-    if(!page.imageinfo || !page.imageinfo.length) throw new Error('no imageinfo');
-    const ii = page.imageinfo[0];
-    const url = ii.thumburl || ii.url;
-    if(!url) throw new Error('no url');
-    // crude filter: skip TIFF
-    if(/\.tif(f)?$/i.test(url)) throw new Error('unsupported tiff');
-    const img=await loadImage(url);
-    const title = (page.title||'').replace(/^File:/,'');
-    return {img, meta:{credit:`${title} — Wikimedia Commons`, src:url}};
-  }
-
-  async function fetchExternalRandom(){
-    // weights: Met 0.4, Unsplash 0.35, Commons 0.25
-    const picks=[
-      {fn:fetchMetRandom, w:0.4},
-      {fn:fetchUnsplashRandom, w:0.35},
-      {fn:fetchCommonsRandom, w:0.25}
-    ];
-    let r=Math.random();
-    for(const p of picks){
-      if(r < p.w){ try{ return await p.fn(); }catch(e){ r -= p.w; } break; }
-      r -= p.w;
-    }
-    // if first chosen failed, try others in order
-    for(const p of picks){
-      try{ return await p.fn(); }catch(e){}
-    }
-    return await fetchFallback();
-  }
-
-  function loadImage(url){
-    return new Promise((res,rej)=>{ const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=rej; im.src=url; });
-  }
-
-  const fallbackSVGs=[
-    "<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#ffc8f0'/><stop offset='1' stop-color='#b0a6ff'/></linearGradient></defs><rect width='100%' height='100%' fill='url(#g)'/><circle cx='320' cy='240' r='120' fill='rgba(255,255,255,.4)'/><rect x='90' y='80' width='80' height='80' fill='rgba(15,15,35,.5)'/></svg>",
-    "<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'><rect width='100%' height='100%' fill='#10122a'/><g fill='#c0a9ff'><rect x='60' y='60' width='140' height='12'/><rect x='60' y='90' width='220' height='12'/><rect x='60' y='120' width='180' height='12'/></g><g fill='#79ffd1' opacity='.6'><circle cx='500' cy='200' r='60'/><circle cx='560' cy='260' r='24'/></g></svg>"
-  ];
-  async function fetchFallback(){
-    const data=fallbackSVGs[(Math.random()*fallbackSVGs.length)|0];
-    const url='data:image/svg+xml;utf8,'+encodeURIComponent(data);
-    const img=await loadImage(url);
-    return {img, meta:{credit:'Generated placeholder — CC0', src:'inline'}};
-  }
-
-  // ---------- ROOM ENGINE ----------
-  const TYPES=['image-full','image-pixel','image-zoom','abstract-fractal','tk-style'];
-  let bag=[]; let recentImgs=new Set(); let busy=false; let currentRoomType='';
-
-  function refillBag(){ bag=[]; for(let i=0;i<12;i++){ const t=TYPES[(Math.random()*TYPES.length)|0]; bag.push({id:Date.now()+"-"+i+"-"+Math.random().toString(36).slice(2), type:t}); } }
-
-  async function nextRoom(){
-    if(busy) return; busy=true;
-    if(!bag.length) refillBag();
-
-    // sound variety per page (no saw)
-    if(ac){
-      const pick = Math.random();
-      setPadProfile({ring: pick<0.4}); // 40% with ring
-      gentlyMoveFilter();
-    }
-
-    let room=bag.shift();
-    currentRoomType = room.type;
-    if(room.type==='abstract-fractal' && !gl){ room={...room, type:'tk-style'}; currentRoomType=room.type; }
-
-    // dots (only way to advance)
-    const stageRect=stageEl.getBoundingClientRect();
-    const two=Math.random()<0.55;
-    styleDot(p1); placeDot(p1,stageRect); p1.style.display='block';
-    if(two){ styleDot(p2); placeDot(p2,stageRect); p2.style.display='block'; } else { p2.style.display='none'; }
-
-    // clear UI labels by default
-    creditText.textContent=''; roomText.textContent='';
-
-    // clear canvases
-    clearImg();
-    if(gl){ gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
-
-    // set visuals
-    if(room.type==='abstract-fractal'){
-      if(gl && !prog) initGL();
-      if(gl){ setFractalView(); renderFractalOnce(); }
-      if(ac) setForceScale(lastFractalBright ? 'major' : null);
-      await placePoetry();
-
-      p1.onclick=(e)=>transitionAtDot(e.currentTarget, ()=>{ cut(); });
-      p2.onclick=(e)=>transitionAtDot(e.currentTarget, ()=>{ if(gl){ setFractalView(); renderFractalOnce(); } cut(); });
-
-    } else if(room.type==='tk-style'){
-      if(ac) setForceScale(null);
-      drawTK(); await placePoetry();
-      p1.onclick=(e)=>transitionAtDot(e.currentTarget, ()=>{ cut(); });
-      p2.onclick=(e)=>transitionAtDot(e.currentTarget, ()=>{ drawTK(); cut(); });
-
-    } else {
-      let pack;
-      try{
-        pack=await fetchExternalRandom();
-        if(pack.meta && pack.meta.src && pack.meta.src!=='inline'){
-          if(recentImgs.has(pack.meta.src)) throw new Error('repeat');
-          recentImgs.add(pack.meta.src);
-          if(recentImgs.size>60){ const first=recentImgs.values().next().value; recentImgs.delete(first); }
-        }
-      }catch(e){ pack=await fetchFallback(); }
-
-      // anti-flash pre-tone
-      preTone(avgLumaFromImage(pack.img));
-
-      // show credit only for external images (not generated)
-      if(pack.meta && pack.meta.src!=='inline'){ creditText.textContent=pack.meta.credit; }
-
-      if(room.type==='image-full'){ drawContain(pack.img); }
-      if(room.type==='image-pixel'){ const choices=[1,1,2,2,3,4,6,8,12,16,24,32]; const n=choices[(Math.random()*choices.length)|0]; drawPixelN(pack.img,n); }
-      if(room.type==='image-zoom'){ drawZoomRandom(pack.img); }
-
-      await placePoetry();
-      liftIfTooDark(0.16);
-
-      p1.onclick=(e)=>transitionAtDot(e.currentTarget, ()=>{ cut(); });
-      p2.onclick=(e)=>transitionAtDot(e.currentTarget, ()=>{ if(gl){ setFractalView(); renderFractalOnce(); } cut(); });
-    }
-
-    // ensure stage/canvas clicks do NOT advance
-    glCanvas.onclick = null;
-    imgCanvas.onclick = null;
-    stageEl.onclick = null;
-
-    busy=false;
-  }
-
-  // transition: ripple from dot, then callback
-  function transitionAtDot(dotEl, beforeCut){
-    rippleFromElement(dotEl).then(()=>{ try{ beforeCut&&beforeCut(); }catch(e){} });
-  }
-  function rippleFromElement(el){
-    return new Promise((resolve)=>{
-      const sRect = stageEl.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      const x = r.left + r.width/2 - sRect.left;
-      const y = r.top + r.height/2 - sRect.top;
-      const rip = document.createElement('div');
-      rip.className='ripple';
-      rip.style.left = x+'px';
-      rip.style.top  = y+'px';
-      stageEl.appendChild(rip);
-      el.classList.add('hit');
-      rip.addEventListener('animationend', ()=>{
-        try{ stageEl.removeChild(rip); }catch{}
-        el.classList.remove('hit');
-        resolve();
-      }, {once:true});
-    });
-  }
-
-  function randPoint(rect){ const x=Math.random()*(rect.width-80)+40; const y=Math.random()*(rect.height-120)+60; return {x,y}; }
-  function styleDot(el){
-    const size=6+((Math.random()*154)|0);
-    const shapes=['circle','square','diamond','triangle','hex','star'];
-    const shape=shapes[(Math.random()*shapes.length)|0];
-    el.style.width=size+'px'; el.style.height=size+'px';
-    const border=(1+((Math.random()*5)|0)); el.style.borderWidth=border+'px';
-    el.style.borderColor='rgba(255,255,255,.9)';
-    const glow=0.2+Math.random()*1.0; const bgAlpha=0.08+Math.random()*0.35; const hue=(Math.random()*360)|0;
-    el.style.background=`rgba(200,180,255,${bgAlpha})`;
-    el.style.boxShadow=`0 0 0 2px hsla(${hue},70%,80%,${glow*0.55}), 0 0 ${Math.floor(14+glow*36)}px hsla(${hue},80%,75%,${glow})`;
-    const anims=['pulse','throb','wobble','jitter']; el.style.animationName=anims[(Math.random()*anims.length)|0];
-    el.style.animationDuration=(0.5+Math.random()*2.6).toFixed(2)+'s';
-    el.style.animationTimingFunction=Math.random()<0.5?'ease-in-out':'ease';
-    el.style.animationIterationCount='infinite';
-    if(shape==='circle'){ el.style.borderRadius='50%'; el.style.clipPath='none'; el.style.transform='none'; }
-    if(shape==='square'){ el.style.borderRadius=(Math.random()<0.5?'4px':'12px'); el.style.clipPath='none'; el.style.transform='none'; }
-    if(shape==='diamond'){ el.style.borderRadius='10px'; el.style.clipPath='none'; el.style.transform='rotate(45deg)'; }
+        const a
     if(shape==='triangle'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 0% 100%, 100% 100%)'; el.style.transform='none'; }
     if(shape==='hex'){ el.style.borderRadius='0'; el.style.clipPath='polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0% 50%)'; el.style.transform='none'; }
     if(shape==='star'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)'; el.style.transform='none'; }
@@ -1490,4 +1264,5 @@
 </script>
 </body>
 </html>
+
 
