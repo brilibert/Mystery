@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>~Things Are Inevitable~</title>
+  <title>~Things are Inevitable~</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -520,439 +520,6 @@
     for(let i=0;i<maxTries;i++){
       try{
         const r=await fetch('https://poetrydb.org/random');
-        const a
-    if(shape==='triangle'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 0% 100%, 100% 100%)'; el.style.transform='none'; }
-    if(shape==='hex'){ el.style.borderRadius='0'; el.style.clipPath='polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0% 50%)'; el.style.transform='none'; }
-    if(shape==='star'){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)'; el.style.transform='none'; }
-  }
-  function placeDot(el, rect){ const pos=randPoint(rect); el.style.left=(pos.x - (el.offsetWidth||40)/2)+"px"; el.style.top=(pos.y - (el.offsetHeight||40)/2)+"px"; }
-  function cut(){ nextRoom(); }
-
-  // ---------- START ----------
-  beginBtn.addEventListener('click', async ()=>{
-    if(!started){ initAudio(); started=true; }
-    resumeAudioSync();
-    overlay.style.display='none';
-    if(gl && !prog){ initGL(); }
-    await nextRoom();
-  }, {passive:false});
-
-  // ---------- Smoke tests ----------
-  (function smoke(){
-    try{
-      console.assert(!!stageEl,'stage missing');
-      console.assert(glCanvas && imgCanvas,'canvases missing');
-      console.assert(typeof beginBtn.onclick !== 'undefined','start handler ok');
-      if(gl){ const ok = gl.getParameter(gl.VERSION); console.assert(!!ok,'webgl context'); }
-    }catch(e){ console.warn('Smoke tests:',e); }
-  })();
-})();
-</script>
-</body>
-</html>
-  const p2 = document.getElementById('p2');
-  const creditText = document.getElementById('creditText');
-  const roomText = document.getElementById('roomText');
-  const overlay = document.getElementById('overlay');
-  const beginBtn = document.getElementById('begin');
-
-  function fit(){
-    const r = stageEl.getBoundingClientRect();
-    [glCanvas, imgCanvas].forEach(c=>{ c.width=r.width|0; c.height=r.height|0; });
-  }
-  window.addEventListener('resize', fit, {passive:true}); fit();
-
-  // ---------- AUDIO (no saw; sine + optional ring) ----------
-  let ac, master, padBus, melBus, melOut, filter, verb, verbSend, delay, fb, started=false;
-  let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
-  let ringGroup=null; let panner=null; let revPing=null; let forceScaleMode=null;
-
-  function initAudio(){
-    if(ac) return;
-    ac = new (window.AudioContext||window.webkitAudioContext)();
-    master=ac.createGain(); master.gain.value=0.15; master.connect(ac.destination);
-    padBus=ac.createGain(); padBus.gain.value=0.9;
-    melBus=ac.createGain(); melBus.gain.value=0.95;
-
-    if (ac.createStereoPanner){
-      panner = ac.createStereoPanner(); melBus.connect(panner); melOut = panner;
-    } else { melOut = melBus; }
-
-    filter=ac.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=2200; filter.Q.value=0.7;
-
-    verb=ac.createConvolver(); verb.buffer=makeReverbImpulse(ac, 4.2, 4.2);
-    verbSend=ac.createGain(); verbSend.gain.value=0.40;
-
-    delay=ac.createDelay(1.3); delay.delayTime.value=0.42+Math.random()*0.2;
-    fb=ac.createGain(); fb.gain.value=0.26; delay.connect(fb); fb.connect(delay);
-
-    padBus.connect(filter); melOut.connect(filter); filter.connect(master);
-    padBus.connect(verbSend); melOut.connect(verbSend); verbSend.connect(verb); verb.connect(master);
-    melOut.connect(delay); delay.connect(master);
-
-    setPadProfile({ring:false}); // sine bed
-    startMelody();
-
-    ac.onstatechange = ()=>{ /* resume handled on gesture */ };
-  }
-
-  // iOS unlock helpers
-  function resumeAudioSync(){
-    if(!ac) return;
-    try{ if(ac.state === 'suspended') ac.resume(); }catch(e){}
-  }
-  document.addEventListener('pointerdown', resumeAudioSync, {passive:true, capture:true});
-  document.addEventListener('touchend', resumeAudioSync, {passive:true, capture:true});
-  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') resumeAudioSync(); });
-
-  function makeReverbImpulse(ctx, seconds, decay){
-    const rate=ctx.sampleRate, len=Math.floor(rate*seconds);
-    const buf=ctx.createBuffer(2,len,rate);
-    for(let c=0;c<2;c++){
-      const data=buf.getChannelData(c);
-      for(let i=0;i<len;i++){ const t=i/len; data[i]=(Math.random()*2-1)*Math.pow(1-t,decay); }
-    }
-    return buf;
-  }
-
-  function stopVoices(){
-    voices.forEach(o=>{ try{o.stop()}catch{} try{o.disconnect()}catch{} }); voices=[];
-    if(vibratoLFO){ try{vibratoLFO.stop()}catch{} try{vibratoLFO.disconnect()}catch{} vibratoLFO=null; }
-    if(ringGroup){
-      const {mod, off, vca, pre} = ringGroup;
-      try{mod.stop()}catch{} try{mod.disconnect()}catch{}
-      try{off.stop()}catch{} try{off.disconnect()}catch{}
-      try{vca.disconnect()}catch{} try{pre.disconnect()}catch{}
-      ringGroup=null;
-    }
-  }
-  function setForceScale(mode){ forceScaleMode=mode; }
-
-  function pickChord(){
-    const roots=[196,220,247,262,294,330];
-    const root=roots[(Math.random()*roots.length)|0];
-    let major=Math.random()<0.55;
-    if(forceScaleMode==='major') major=true;
-    if(forceScaleMode==='minor') major=false;
-    const tri=major?[0,4,7]:[0,3,7];
-    const add7=Math.random()<0.35?(major?11:10):null;
-    const notes=tri.concat(add7!==null?[add7]:[]);
-    currentScale={root,major};
-    return notes.map(n=> root*Math.pow(2,n/12));
-  }
-
-  function setPadProfile(profile){
-    if(!ac) return;
-    stopVoices();
-    const useRing = !!profile.ring;
-
-    const pre=ac.createGain(); pre.gain.value=0.7;
-    const freqs=pickChord();
-
-    freqs.forEach((f)=>{
-      const o=ac.createOscillator();
-      o.type='sine'; o.frequency.value=f;
-      const g=ac.createGain(); g.gain.value=0.22;
-      o.connect(g); g.connect(pre); o.start(); voices.push(o);
-    });
-
-    vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.18+Math.random()*0.25;
-    const vib=ac.createGain(); vib.gain.value=4.5; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start();
-
-    if(useRing){
-      const vca=ac.createGain();
-      const mod=ac.createOscillator(); mod.type='sine'; mod.frequency.value=70+Math.random()*180;
-      const sc=ac.createGain(); sc.gain.value=0.55;
-      const off=ac.createConstantSource(); off.offset.value=0.5; off.start();
-      pre.connect(vca); vca.connect(padBus);
-      mod.connect(sc); sc.connect(vca.gain); off.connect(vca.gain); mod.start();
-      ringGroup={mod,off,vca,pre};
-    } else {
-      pre.connect(padBus);
-    }
-    filter.frequency.setTargetAtTime(2300, ac.currentTime, 0.5);
-  }
-
-  function startMelody(){
-    if(melodyTimer) clearTimeout(melodyTimer);
-    const tick=()=>{ const interval=460+Math.random()*420; playMelodyNote(); melodyTimer=setTimeout(tick, interval); };
-    tick();
-  }
-  function pentatonicDegrees(major){ return major ? [0,2,4,7,9,12] : [0,3,5,7,10,12]; }
-  function playMelodyNote(){
-    if(!ac) return;
-    const deg=pentatonicDegrees(currentScale.major);
-    const step=deg[(Math.random()*deg.length)|0] + (Math.random()<0.18?12:0);
-    const freq=currentScale.root*Math.pow(2,step/12);
-    const o=ac.createOscillator(); o.type=Math.random()<0.7?'sine':'triangle'; o.frequency.value=freq; o.detune.value=(Math.random()-0.5)*6;
-    const env=ac.createGain(); env.gain.value=0.0; o.connect(env); env.connect(melBus);
-    const now=ac.currentTime; const a=0.02,d=0.22,r=0.65 + Math.random()*0.4,lvl=0.34;
-    env.gain.linearRampToValueAtTime(lvl, now+a);
-    env.gain.linearRampToValueAtTime(0.14, now+a+d);
-    env.gain.setTargetAtTime(0.0, now+a+d, r);
-    o.start(now); o.stop(now+a+d+r+0.1);
-  }
-  function gentlyMoveFilter(){ if(!ac) return; filter.frequency.setTargetAtTime(filter.frequency.value + (Math.random()-0.5)*130, ac.currentTime, 0.7); }
-
-  // ---------- WEBGL FRACTAL (Mandelbrot / Julia / Burning Ship / Tricorn) ----------
-  const gl = glCanvas.getContext('webgl');
-  let prog, uRes, uMode, uC, uCenter, uZoom, uA, uB, uCvec, uD;
-  function createShader(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); } return s; }
-  function createProgram(vs,fs){ const p=gl.createProgram(); gl.attachShader(p,createShader(gl.VERTEX_SHADER,vs)); gl.attachShader(p,createShader(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); } return p; }
-  const VS=`attribute vec2 a; void main(){ gl_Position=vec4(a,0.0,1.0);} `;
-  const FS=`precision highp float;
-    uniform vec2 res; uniform int mode; uniform vec2 c; uniform vec2 center; uniform float zoom;
-    uniform vec3 A; uniform vec3 B; uniform vec3 C; uniform vec3 D;
-    vec3 pal(float x){ return A + B * cos(6.283*(C*x + D)); }
-    void main(){
-      vec2 uv=(gl_FragCoord.xy - 0.5*res)/min(res.x,res.y);
-      uv = uv/zoom + center;
-      int MAX=300; float it=0.0;
-      if(mode==0){ vec2 z=vec2(0.0); vec2 cc=uv;
-        for(int i=0;i<520;i++){ if(i==MAX) break;
-          z=vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y)+cc;
-          if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX); }
-        }
-      } else if(mode==1){ vec2 z=uv; vec2 cc=c;
-        for(int i=0;i<520;i++){ if(i==MAX) break;
-          z=vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y)+cc;
-          if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX); }
-        }
-      } else if(mode==2){ vec2 z=vec2(0.0); vec2 cc=uv;
-        for(int i=0;i<520;i++){ if(i==MAX) break;
-          z=vec2(z.x*z.x - z.y*z.y, 2.0*abs(z.x*z.y));
-          z=vec2(abs(z.x), abs(z.y)) + cc;
-          if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX); }
-        }
-      } else { vec2 z=vec2(0.0); vec2 cc=uv;
-        for(int i=0;i<520;i++){ if(i==MAX) break;
-          z=vec2(z.x*z.x - z.y*z.y, -2.0*z.x*z.y) + cc;
-          if(dot(z,z)>4.0){ it=float(i); break;} if(i==MAX-1){ it=float(MAX); }
-        }
-      }
-      float x=it/float(MAX); vec3 col=pal(x); gl_FragColor=vec4(col,1.0);
-    }`;
-  function initGL(){
-    prog=createProgram(VS,FS);
-    const ab=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,ab);
-    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-    gl.useProgram(prog);
-    const loc=gl.getAttribLocation(prog,'a'); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); gl.enableVertexAttribArray(loc);
-    uRes=gl.getUniformLocation(prog,'res'); uMode=gl.getUniformLocation(prog,'mode'); uC=gl.getUniformLocation(prog,'c');
-    uCenter=gl.getUniformLocation(prog,'center'); uZoom=gl.getUniformLocation(prog,'zoom');
-    uA=gl.getUniformLocation(prog,'A'); uB=gl.getUniformLocation(prog,'B'); uCvec=gl.getUniformLocation(prog,'C'); uD=gl.getUniformLocation(prog,'D');
-  }
-  let glMode=0, glC2=[0.355,0.355], lastPalette=-1, lastFractalBright=false;
-  let fCenter=[-0.5,0.0], fZoom=1.0;
-  let palA=[0.5,0.5,0.5], palB=[0.5,0.5,0.5], palC=[1,1,1], palD=[0.0,0.33,0.67];
-  const PALETTES=[
-    {A:[0.48,0.50,0.56], B:[0.52,0.42,0.32], C:[1.0,1.0,1.0], D:[0.00,0.20,0.33], bright:true},
-    {A:[0.35,0.42,0.55], B:[0.45,0.35,0.25], C:[1.0,1.0,1.0], D:[0.00,0.08,0.20], bright:true},
-    {A:[0.42,0.36,0.56], B:[0.48,0.28,0.48], C:[1.0,1.0,1.0], D:[0.18,0.00,0.25], bright:true},
-    {A:[0.28,0.30,0.24], B:[0.42,0.36,0.22], C:[1.0,1.0,1.0], D:[0.06,0.12,0.04], bright:false},
-    {A:[0.26,0.28,0.40], B:[0.55,0.45,0.30], C:[1.0,1.0,1.0], D:[0.20,0.26,0.38], bright:false}
-  ];
-  function setFractalView(){
-    const centersM=[[-0.745,0.186],[-0.8,0.156],[-0.745,-0.12],[-0.5,0.0],[-0.1,0.651]];
-    const centersBS=[[-1.75,-0.02],[-1.85,0.0],[-1.65,0.02],[-1.7,-0.1]];
-    const centersTri=[[-0.2,0.0],[-0.1,0.3],[-0.3,-0.2],[-0.4,0.2]];
-    const picks=[0,0,0,1,1,2,3];
-    glMode = picks[(Math.random()*picks.length)|0];
-    let p;
-    if(glMode===0) p=centersM[(Math.random()*centersM.length)|0];
-    else if(glMode===2) p=centersBS[(Math.random()*centersBS.length)|0];
-    else if(glMode===3) p=centersTri[(Math.random()*centersTri.length)|0];
-    else p=[0.285,0.01];
-    fCenter=[p[0]+(Math.random()-0.5)*0.05, p[1]+(Math.random()-0.5)*0.05];
-    const depths=[0.7,1.0,1.4,2.0,3.0,4.5,6.0,8.0,12.0,16.0,20.0];
-    fZoom=depths[(Math.random()*depths.length)|0];
-    glC2=[(Math.random()*0.8-0.4),(Math.random()*0.8-0.4)];
-    let idx; do{ idx=(Math.random()*PALETTES.length)|0; } while(idx===lastPalette && PALETTES.length>1);
-    lastPalette=idx; const pal=PALETTES[idx];
-    palA=pal.A; palB=pal.B; palC=pal.C; palD=pal.D; lastFractalBright=pal.bright;
-  }
-  function renderFractalOnce(){
-    const w=glCanvas.width,h=glCanvas.height;
-    gl.viewport(0,0,w,h); gl.useProgram(prog);
-    gl.uniform2f(uRes,w,h); gl.uniform1i(uMode,glMode);
-    gl.uniform2f(uC, glC2[0], glC2[1]); gl.uniform1f(uZoom, fZoom);
-    gl.uniform2f(uCenter, fCenter[0], fCenter[1]);
-    gl.uniform3f(uA, palA[0],palA[1],palA[2]); gl.uniform3f(uB, palB[0],palB[1],palB[2]);
-    gl.uniform3f(uCvec, palC[0],palC[1],palC[2]); gl.uniform3f(uD, palD[0],palD[1],palD[2]);
-    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-  }
-
-  // ---------- 2D helpers ----------
-  const ctx=imgCanvas.getContext('2d',{willReadFrequently:true});
-  function clearImg(){ ctx.clearRect(0,0,imgCanvas.width,imgCanvas.height); }
-  function drawContain(img){
-    clearImg(); const W=imgCanvas.width,H=imgCanvas.height;
-    const ir=img.width/img.height,cr=W/H; let dw,dh;
-    if(ir>cr){ dw=W; dh=W/ir; } else { dh=H; dw=H*ir; }
-    const dx=(W-dw)/2, dy=(H-dh)/2; ctx.imageSmoothingEnabled=true; ctx.drawImage(img,dx,dy,dw,dh);
-  }
-  function drawPixelN(img,n){
-    clearImg(); const off=document.createElement('canvas'); const o=off.getContext('2d',{willReadFrequently:true});
-    off.width=n; off.height=n; const W=imgCanvas.width,H=imgCanvas.height;
-    const ir=img.width/img.height,cr=W/H; let sw,sh;
-    if(ir>cr){ sh=img.height; sw=sh*cr; } else { sw=img.width; sh=sw/cr; }
-    const sx=(img.width-sw)/2, sy=(img.height-sh)/2; o.imageSmoothingEnabled=false;
-    o.drawImage(img,sx,sy,sw,sh,0,0,n,n); ctx.imageSmoothingEnabled=false; ctx.drawImage(off,0,0,n,n,0,0,W,H);
-  }
-  function drawZoomRandom(img){
-    clearImg();
-    const pxSizes=[1,1,2,2,3,4,6,8,12,16,24,32];
-    const px=pxSizes[(Math.random()*pxSizes.length)|0];
-    const W=img.width,H=img.height;
-    const sx=Math.max(0,(Math.random()*(W-px))|0);
-    const sy=Math.max(0,(Math.random()*(H-px))|0);
-    const CW=imgCanvas.width,CH=imgCanvas.height; ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(img,sx,sy,px,px,0,0,CW,CH);
-    return px;
-  }
-
-  // anti-flash for images
-  let prevLuma = 0.5, tintTimer=null;
-  function avgLumaFromImage(img){
-    try{
-      const s=32, off=document.createElement('canvas'); off.width=s; off.height=s;
-      const o=off.getContext('2d',{willReadFrequently:true});
-      o.drawImage(img,0,0,s,s);
-      const d=o.getImageData(0,0,s,s).data; let sum=0;
-      for(let i=0;i<d.length;i+=4){ sum += (0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) / 255; }
-      return sum/(d.length/4);
-    }catch(e){ return 0.5; }
-  }
-  function preTone(nextLuma){
-    const delta = nextLuma - prevLuma;
-    const abs = Math.abs(delta);
-    if(tintTimer){ clearTimeout(tintTimer); tintTimer=null; }
-    if(abs > 0.35){
-      const brighter = delta > 0;
-      const alpha = Math.min(0.55, (abs-0.35)*0.8 + 0.18);
-      tint.style.backgroundColor = brighter ? `rgba(0,0,0,${alpha})` : `rgba(255,255,255,${alpha})`;
-      tintTimer = setTimeout(()=>{ tint.style.backgroundColor = 'rgba(0,0,0,0)'; }, 280);
-    } else {
-      tint.style.backgroundColor = 'rgba(0,0,0,0)';
-    }
-    prevLuma = nextLuma*0.85 + prevLuma*0.15;
-  }
-  function estimateStageLuma(){
-    try{
-      const w=64,h=64, off=document.createElement('canvas'); off.width=w; off.height=h;
-      const g=off.getContext('2d',{willReadFrequently:true});
-      g.drawImage(glCanvas,0,0,w,h); g.drawImage(imgCanvas,0,0,w,h);
-      const d=g.getImageData(0,0,w,h).data; let sum=0;
-      for(let i=0;i<d.length;i+=4){ sum += (0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255; }
-      return sum/(w*h);
-    }catch(e){ return 0.5; }
-  }
-  function liftIfTooDark(min=0.16){
-    const cur=estimateStageLuma();
-    if(cur < min){
-      const alpha=Math.min(0.55, (min-cur)*1.8 + 0.12);
-      tint.style.backgroundColor = `rgba(255,255,255,${alpha.toFixed(3)})`;
-      setTimeout(()=>{ tint.style.backgroundColor='rgba(0,0,0,0)'; }, 280);
-    }
-  }
-
-  // grain
-  let grainCanvas=null, grainPattern=null;
-  function ensureGrain(){
-    if(!grainCanvas){
-      const off=document.createElement('canvas'); off.width=128; off.height=128;
-      const o=off.getContext('2d'); const img=o.createImageData(128,128); const d=img.data;
-      for(let i=0;i<d.length;i+=4){ const v=215 + (Math.random()*40|0); d[i]=d[i+1]=d[i+2]=v; d[i+3]=28; }
-      o.putImageData(img,0,0); grainCanvas=off;
-    }
-    if(!grainPattern) grainPattern=ctx.createPattern(grainCanvas,'repeat');
-  }
-
-  // ---------- TK (subtle, hero + raster) ----------
-  function drawTK(){
-    clearImg(); ensureGrain();
-    const W=imgCanvas.width,H=imgCanvas.height;
-
-    const bg1=`hsl(${(Math.random()*360|0)}, 40%, 12%)`, bg2=`hsl(${(Math.random()*360|0)}, 45%, 16%)`;
-    const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,bg1); g.addColorStop(1,bg2); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-
-    ctx.save(); ctx.globalAlpha=0.10; ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1; const step=48;
-    for(let x=0;x<W;x+=step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-    for(let y=0;y<H;y+=step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
-    ctx.restore();
-
-    ctx.save(); ctx.globalAlpha=0.18; ctx.fillStyle='rgba(255,255,255,0.08)'; const bandH=H*0.12;
-    ctx.translate(0,H*0.1); ctx.rotate(-Math.PI/20);
-    for(let i=0;i<4;i++){ ctx.fillRect(-W, i*bandH, W*3, bandH*0.32); }
-    ctx.restore();
-
-    const colors=['#ff71ce','#b967ff','#01cdfe','#05ffa1','#ffd166'];
-    const N = 6 + (Math.random()*8|0);
-    const heroIdx = (Math.random()*N)|0;
-
-    function extrude(drawFn, x,y, rot, depth, base){
-      ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
-      ctx.save(); ctx.translate(depth, depth); ctx.globalAlpha=0.5; ctx.fillStyle=shade(base,-0.35); ctx.strokeStyle=shade(base,-0.45); drawFn('fill+stroke'); ctx.restore();
-      ctx.fillStyle=base; ctx.strokeStyle=shade(base,-0.25); drawFn('fill+stroke');
-      ctx.globalAlpha=0.22; ctx.strokeStyle='#ffffff'; ctx.lineWidth=2; drawFn('stroke');
-      ctx.restore();
-    }
-    function shade(hex, amt){
-      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-      let r=parseInt(m[1],16),g2=parseInt(m[2],16),b=parseInt(m[3],16);
-      r=Math.max(0,Math.min(255, r + amt*255)); g2=Math.max(0,Math.min(255, g2 + amt*255)); b=Math.max(0,Math.min(255, b + amt*255));
-      return `rgb(${r|0},${g2|0},${b|0})`;
-    }
-
-    for(let i=0;i<N;i++){
-      const base = colors[(Math.random()*colors.length)|0];
-      const x = Math.random()*W, y = Math.random()*H;
-      const rot = (Math.random()*Math.PI*2);
-      const isHero = i===heroIdx;
-      const s = (isHero? 120: 40) + Math.random()*(isHero? 160: 120);
-      const depth = 6 + Math.random()*12;
-      const kind = ['prism','sphere','tube','pyramid','ring','block','zig'][(Math.random()*7)|0];
-
-      if(kind==='sphere'){
-        ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
-        const r = s*0.5; const rg = ctx.createRadialGradient(-r*0.2,-r*0.2,r*0.2, 0,0,r);
-        rg.addColorStop(0, shade(base,0.25)); rg.addColorStop(1, shade(base,-0.35));
-        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill(); ctx.restore();
-      } else if(kind==='tube'){
-        extrude((mode)=>{ ctx.lineWidth=3; const w=s*1.2,h=s*0.45; roundRect(ctx,-w/2,-h/2,w,h, h*0.5); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-      } else if(kind==='ring'){
-        ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.lineWidth=6; ctx.strokeStyle=base; ctx.globalAlpha=0.9; ctx.beginPath(); ctx.arc(0,0,s*0.5,0,Math.PI*2); ctx.stroke(); ctx.restore();
-      } else if(kind==='pyramid'){
-        extrude((mode)=>{ ctx.beginPath(); ctx.moveTo(0, -s*0.6); ctx.lineTo(-s*0.55, s*0.5); ctx.lineTo(s*0.55, s*0.5); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-      } else if(kind==='prism'){
-        extrude((mode)=>{ const w=s,h=s*0.55; ctx.beginPath(); ctx.moveTo(-w/2, -h/2); ctx.lineTo(w/2, -h/2); ctx.lineTo(w/2, h/2); ctx.lineTo(-w/2, h/2); ctx.closePath(); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-      } else if(kind==='zig'){
-        ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.lineWidth=5; ctx.strokeStyle=base; ctx.globalAlpha=0.85; ctx.beginPath();
-        ctx.moveTo(-s*0.6,0); for(let k=0;k<6;k++){ const nx=-s*0.6 + (k+1)*(s*0.2); const ny=(k%2? -s*0.35: s*0.35); ctx.lineTo(nx,ny);} ctx.stroke(); ctx.restore();
-      } else { // block
-        extrude((mode)=>{ const w=s*0.9,h=s*0.7; ctx.beginPath(); ctx.rect(-w/2,-h/2,w,h); if(mode.includes('fill')) ctx.fill(); if(mode.includes('stroke')) ctx.stroke(); }, x,y,rot,depth,base);
-      }
-    }
-    ctx.save(); ctx.globalAlpha=0.14; ctx.fillStyle=grainPattern; ctx.fillRect(0,0,W,H); ctx.restore();
-  }
-  function roundRect(ctx,x,y,w,h,r){
-    const rr=Math.min(r, w/2, h/2);
-    ctx.beginPath(); ctx.moveTo(x+rr,y);
-    ctx.arcTo(x+w,y,x+w,y+h,rr);
-    ctx.arcTo(x+w,y+h,x,y+h,rr);
-    ctx.arcTo(x,y+h,x,y,rr);
-    ctx.arcTo(x,y,x+w,y,rr);
-    ctx.closePath();
-  }
-
-  // ---------- Poetry (non-overlap) ----------
-  const PD_AUTHORS=['Emily Dickinson','Walt Whitman','William Blake','Christina Rossetti','John Keats','Percy Bysshe Shelley','Robert Browning','Elizabeth Barrett Browning','Ralph Waldo Emerson','Henry Wadsworth Longfellow','John Donne','George Herbert','Andrew Marvell','Thomas Hardy','Gerard Manley Hopkins','Matthew Arnold','Sara Teasdale','A. E. Housman'];
-  const OBVIOUS=[/O\s*Captain/i,/Do I contradict myself/i,/Hope is the thing with feathers/i,/red wheel\s*barrow/i,/April is the cruellest month/i];
-
-  async function fetchPoemPD(maxTries=6){
-    for(let i=0;i<maxTries;i++){
-      try{
-        const r=await fetch('https://poetrydb.org/random');
         const arr=await r.json();
         const p=Array.isArray(arr)?arr[0]:arr;
         if(!p||!p.lines) continue;
@@ -1046,17 +613,14 @@
     return {img, meta};
   }
 
-  // Unsplash (no API key): random redirect endpoint. Canvas reads may taint; we guard in code.
   async function fetchUnsplashRandom(){
     const topics=['abstract','texture','vaporwave','neon','clouds','pattern','marble','gradient','retro','geometry','minimal','pastel'];
-    const pick = [];
-    for(let i=0;i<3;i++){ pick.push(topics[(Math.random()*topics.length)|0]); }
+    const pick = []; for(let i=0;i<3;i++){ pick.push(topics[(Math.random()*topics.length)|0]); }
     const url=`https://source.unsplash.com/1600x900/?${encodeURIComponent(pick.join(','))}&sig=${Date.now()}${Math.floor(Math.random()*1000)}`;
     const img=await loadImage(url);
     return {img, meta:{credit:'Unsplash — Random', src:img.src||url}};
   }
 
-  // Wikimedia Commons: random File (namespace 6), prefer ~2000px thumb
   async function fetchCommonsRandom(){
     const api=`https://commons.wikimedia.org/w/api.php?action=query&generator=random&grnnamespace=6&grnlimit=1&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=2000&format=json&origin=*`;
     const r=await fetch(api); const j=await r.json();
@@ -1064,9 +628,7 @@
     const page = Object.values(j.query.pages)[0];
     if(!page.imageinfo || !page.imageinfo.length) throw new Error('no imageinfo');
     const ii = page.imageinfo[0];
-    const url = ii.thumburl || ii.url;
-    if(!url) throw new Error('no url');
-    // crude filter: skip TIFF
+    const url = ii.thumburl || ii.url; if(!url) throw new Error('no url');
     if(/\.tif(f)?$/i.test(url)) throw new Error('unsupported tiff');
     const img=await loadImage(url);
     const title = (page.title||'').replace(/^File:/,'');
@@ -1074,21 +636,13 @@
   }
 
   async function fetchExternalRandom(){
-    // weights: Met 0.4, Unsplash 0.35, Commons 0.25
-    const picks=[
-      {fn:fetchMetRandom, w:0.4},
-      {fn:fetchUnsplashRandom, w:0.35},
-      {fn:fetchCommonsRandom, w:0.25}
-    ];
+    const picks=[ {fn:fetchMetRandom, w:0.4}, {fn:fetchUnsplashRandom, w:0.35}, {fn:fetchCommonsRandom, w:0.25} ];
     let r=Math.random();
     for(const p of picks){
       if(r < p.w){ try{ return await p.fn(); }catch(e){ r -= p.w; } break; }
       r -= p.w;
     }
-    // if first chosen failed, try others in order
-    for(const p of picks){
-      try{ return await p.fn(); }catch(e){}
-    }
+    for(const p of picks){ try{ return await p.fn(); }catch(e){} }
     return await fetchFallback();
   }
 
@@ -1264,5 +818,3 @@
 </script>
 </body>
 </html>
-
-
