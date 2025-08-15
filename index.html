@@ -101,7 +101,7 @@
       underLiftIfLT: { window:8, notes:2, noteProb:0.70, forTicks:4 }
     },
     // ↓ toned down
-    foley: { ambientProb: 0.16, tapProb: 0.48 },
+    foley: { ambientProb: 0.20, tapProb: 0.57 },
     darkGuard: { minLuma: 0.14, maxFetchTries: 3 }
   };
   function roll(p){ return Math.random() < p; }
@@ -270,7 +270,7 @@
   function maybePlayAmbientFoley(){
     if(!ac) return;
     if(roll(SCENE_PROFILE.foley.ambientProb)){
-      if(!playFoleyClip({gain:0.16, rate: 0.9 + Math.random()*0.2, maxSec:1.4})){
+      if(!playFoleyClip({gain:0.20, rate: 0.9 + Math.random()*0.2, maxSec:1.4})){
         playSynthFoley('whoosh'); // fallback
       }
     }
@@ -278,7 +278,7 @@
   function maybeTapFoley(){
     if(!ac) return;
     if(roll(SCENE_PROFILE.foley.tapProb)){
-      if(!playFoleyClip({gain:0.20 + Math.random()*0.08, rate: 0.95 + Math.random()*0.15, maxSec:1.0})){
+      if(!playFoleyClip({gain:0.24 + Math.random()*0.08, rate: 0.95 + Math.random()*0.15, maxSec:1.0})){
         playSynthFoley('camera'); // fallback
       }
     }
@@ -431,4 +431,5 @@
 </script>
 </body>
 </html>
+
 
