@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>~Things are Inevitable~</title>
+  <title>Vapor-Random — Fullscreen Rev N2 (probability engine)</title>
   <style>
     :root{ --bg:#0a0b10; --fg:#e8e8ff; }
     *{box-sizing:border-box}
@@ -78,10 +78,54 @@
   }
   window.addEventListener('resize', fit, {passive:true}); fit();
 
-  // ---------- AUDIO (tritone-safe pads; Lydian melody when major; no saw) ----------
+  // ---------- SCENE PROFILE (probabilities & ranges) ----------
+  const SCENE_PROFILE = {
+    pads: {
+      majorProb: 0.55,
+      qualities: {
+        major: { triad:0.60, sus2:0.10, sus4:0.10, add6:0.10 /* add9 omitted for major */ },
+        minor: { triad:0.60, sus2:0.10, sus4:0.10, add9:0.10 /* minor add9 */ }
+      },
+      ringProbPerRoom: 0.35,          // ring-mod bed chance per room
+      changeOnRoomProb: 0.80,         // reharmonize on room enter
+      reharmWithinRoomProb: 0.20,     // one late reharm inside room
+      reharmDelaySec: [10, 18]        // window for that reharm
+    },
+    ambience: {
+      lushProb: 0.25,                 // bump verb/delay
+      panDriftProb: 0.60              // slow stereo motion on melody
+    },
+    melody: {
+      baseTickMs: [520, 760],         // scheduler range
+      baseNoteProb: 0.60,             // target ~2–3 notes per 4 ticks
+      phraseProb: 0.70,               // start a phrase
+      phraseNoteCount: [2,5],         // number of notes in phrase
+      phraseRestTicks: [1,3],         // long breath after phrase
+      sustainProb: 0.45,              // extend note
+      leap5Prob: 0.12,
+      leap8Prob: 0.10,
+      graceProb: 0.12,                // soft grace echo
+      breathEveryTicks: [5,8],        // force rest periodically
+      breathRestTicks: [1,2],
+      busyDropIfGT: { window:8, notes:6, noteProb:0.30, forTicks:6 },
+      underLiftIfLT: { window:8, notes:2, noteProb:0.70, forTicks:4 }
+    }
+  };
+
+  function roll(p){ return Math.random() < p; }
+  function pickRange([a,b]){ return a + Math.random()*(b-a); }
+  function weightedPick(obj){
+    let sum=0; for(const k in obj) sum+=obj[k];
+    let r=Math.random()*sum;
+    for(const k in obj){ if((r-=obj[k])<=0) return k; }
+    return Object.keys(obj)[0];
+  }
+
+  // ---------- AUDIO (tritone-safe pads; Lydian melody on major; no saw) ----------
   let ac, master, padBus, melBus, melOut, filter, verb, verbSend, delay, fb, started=false;
   let voices=[]; let vibratoLFO; let currentScale={root:220, major:true}; let melodyTimer=null;
   let ringGroup=null; let panner=null; let forceScaleMode=null;
+  let panDriftActive=false, lushActive=false, reharmTimer=null, lastRing=false;
 
   function initAudio(){
     if(ac) return;
@@ -111,10 +155,7 @@
   }
 
   // iOS unlock helpers
-  function resumeAudioSync(){
-    if(!ac) return;
-    try{ if(ac.state === 'suspended') ac.resume(); }catch(e){}
-  }
+  function resumeAudioSync(){ if(!ac) return; try{ if(ac.state === 'suspended') ac.resume(); }catch(e){} }
   document.addEventListener('pointerdown', resumeAudioSync, {passive:true, capture:true});
   document.addEventListener('touchend', resumeAudioSync, {passive:true, capture:true});
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') resumeAudioSync(); });
@@ -154,17 +195,23 @@
     return false;
   }
   function chooseIntervals(major){
-    const types = major ? ['maj','sus2','sus4','add6'] : ['min','sus2','sus4','add9'];
-    for(let tries=0; tries<8; tries++){
-      const t = types[(Math.random()*types.length)|0];
+    const table = major ? SCENE_PROFILE.pads.qualities.major : SCENE_PROFILE.pads.qualities.minor;
+    for(let tries=0; tries<10; tries++){
+      const t = weightedPick(table);
       let iv;
-      if(t==='maj') iv=[0,4,7];
-      else if(t==='min') iv=[0,3,7];
-      else if(t==='sus2') iv=[0,2,7];
-      else if(t==='sus4') iv=[0,5,7];
-      else if(t==='add6') iv=[0,4,7,9];
-      else if(t==='add9') iv=major?[0,4,7,14]:[0,3,7,14];
-      else iv=major?[0,4,7]:[0,3,7];
+      if(major){
+        if(t==='triad') iv=[0,4,7];
+        else if(t==='sus2') iv=[0,2,7];
+        else if(t==='sus4') iv=[0,5,7];
+        else if(t==='add6') iv=[0,4,7,9];
+        else iv=[0,4,7];
+      }else{
+        if(t==='triad') iv=[0,3,7];
+        else if(t==='sus2') iv=[0,2,7];
+        else if(t==='sus4') iv=[0,5,7];
+        else if(t==='add9') iv=[0,3,7,14];
+        else iv=[0,3,7];
+      }
       const mods = iv.map(n=>((n%12)+12)%12);
       if(!hasTritone(mods)) return iv;
     }
@@ -174,7 +221,7 @@
   function pickChord(){
     const roots=[196,220,247,262,294,330];
     const root=roots[(Math.random()*roots.length)|0];
-    let major=Math.random()<0.55;
+    let major=roll(SCENE_PROFILE.pads.majorProb);
     if(forceScaleMode==='major') major=true;
     if(forceScaleMode==='minor') major=false;
     const iv = chooseIntervals(major);
@@ -182,10 +229,11 @@
     return iv.map(n=> root*Math.pow(2,n/12));
   }
 
-  function setPadProfile(profile){
+  function setPadProfile({ring}){
     if(!ac) return;
     stopVoices();
-    const useRing = !!profile.ring;
+    lastRing = !!ring;
+
     const pre=ac.createGain(); pre.gain.value=0.7;
     const freqs=pickChord();
 
@@ -199,7 +247,7 @@
     vibratoLFO=ac.createOscillator(); vibratoLFO.type='sine'; vibratoLFO.frequency.value=0.18+Math.random()*0.25;
     const vib=ac.createGain(); vib.gain.value=4.5; vibratoLFO.connect(vib); voices.forEach(o=>vib.connect(o.detune)); vibratoLFO.start();
 
-    if(useRing){
+    if(ring){
       const vca=ac.createGain();
       const mod=ac.createOscillator(); mod.type='sine'; mod.frequency.value=70+Math.random()*180;
       const sc=ac.createGain(); sc.gain.value=0.55;
@@ -213,35 +261,98 @@
     filter.frequency.setTargetAtTime(2300, ac.currentTime, 0.5);
   }
 
+  // --- Melody scheduler with density control (~2–3 notes/bar) ---
+  let tickRange=SCENE_PROFILE.melody.baseTickMs;
+  let baseNoteProb=SCENE_PROFILE.melody.baseNoteProb;
+  let phraseActive=false, phraseNotesLeft=0, phraseRestTicks=0;
+  let breathCountdown = Math.floor(pickRange(SCENE_PROFILE.melody.breathEveryTicks));
+  let breathRestLeft = 0;
+  let busyCooldown=0, underBoost=0;
+  const recent = []; // 1 note / 0 rest history
+
   function startMelody(){
     if(melodyTimer) clearTimeout(melodyTimer);
-    const tick=()=>{ const interval=420+Math.random()*420; playMelodyNote(); melodyTimer=setTimeout(tick, interval); };
+    const tick=()=>{
+      const interval = pickRange(tickRange);
+      doMelTick();
+      melodyTimer=setTimeout(tick, interval);
+    };
     tick();
   }
 
-  // --- Melody degrees: Lydian over major pads (raised 4th), minor pentatonic over minor pads ---
-  function melodicDegrees(){
-    // Lydian: 0, 2, 4, ♯4(6), 5(7), 6(9), 7(11), 8(12)
-    return currentScale.major ? [0,2,4,6,7,9,11,12] : [0,3,5,7,10,12];
+  function pushRecent(x){
+    recent.push(x); if(recent.length>SCENE_PROFILE.melody.busyDropIfGT.window) recent.shift();
+    const win = SCENE_PROFILE.melody.busyDropIfGT.window;
+    if(recent.length===win){
+      const sum = recent.reduce((a,b)=>a+b,0);
+      if(sum > SCENE_PROFILE.melody.busyDropIfGT.notes) busyCooldown = SCENE_PROFILE.melody.busyDropIfGT.forTicks;
+      else if(sum < SCENE_PROFILE.melody.underLiftIfLT.notes) underBoost = SCENE_PROFILE.melody.underLiftIfLT.forTicks;
+    }
   }
 
-  function playMelodyNote(){
+  function doMelTick(){
     if(!ac) return;
-    const deg = melodicDegrees();
 
-    // choose degree, with occasional leaps (octave or fifth)
+    // forced rests: phrase cooldown or breath
+    if(phraseRestTicks>0){ phraseRestTicks--; pushRecent(0); return; }
+    if(breathRestLeft>0){ breathRestLeft--; pushRecent(0); return; }
+
+    // periodic breath
+    if(--breathCountdown<=0){
+      breathRestLeft = Math.max(1, Math.round(pickRange(SCENE_PROFILE.melody.breathRestTicks)));
+      breathCountdown = Math.max(2, Math.round(pickRange(SCENE_PROFILE.melody.breathEveryTicks)));
+      pushRecent(0); return;
+    }
+
+    // maybe start a phrase
+    if(!phraseActive && roll(SCENE_PROFILE.melody.phraseProb)){
+      phraseActive = true;
+      phraseNotesLeft = Math.max(2, Math.round(pickRange(SCENE_PROFILE.melody.phraseNoteCount)));
+    }
+
+    // compute note probability
+    let p = baseNoteProb;
+    if(phraseActive) p = Math.max(p, 0.75);
+    if(busyCooldown>0){ p = Math.min(p, SCENE_PROFILE.melody.busyDropIfGT.noteProb); busyCooldown--; }
+    else if(underBoost>0){ p = Math.max(p, SCENE_PROFILE.melody.underLiftIfLT.noteProb); underBoost--; }
+
+    const makeNote = roll(p);
+
+    if(makeNote){
+      playMelodyNote();
+      pushRecent(1);
+      if(phraseActive){
+        phraseNotesLeft--;
+        if(phraseNotesLeft<=0){
+          phraseActive=false;
+          phraseRestTicks = Math.max(1, Math.round(pickRange(SCENE_PROFILE.melody.phraseRestTicks)));
+        }
+      }
+    }else{
+      pushRecent(0);
+    }
+  }
+
+  // --- Melody degrees: Lydian over major pads (raised 4th), minor pentatonic over minor pads ---
+  function melodicDegrees(){ return currentScale.major ? [0,2,4,6,7,9,11,12] : [0,3,5,7,10,12]; }
+
+  function playMelodyNote(){
+    const deg = melodicDegrees();
     let step = deg[(Math.random()*deg.length)|0];
-    if (Math.random() < 0.22) step += 12;      // octave up
-    else if (Math.random() < 0.18) step += 7;  // fifth up
+    if (roll(SCENE_PROFILE.melody.leap8Prob)) step += 12; else if (roll(SCENE_PROFILE.melody.leap5Prob)) step += 7;
 
     const freq = currentScale.root * Math.pow(2, step/12);
 
-    // dynamic envelope + slight pan drift
-    const peak = 0.26 + Math.random()*0.22;
-    const a = 0.015 + Math.random()*0.03;
+    // envelope and sustain
+    const peak = 0.24 + Math.random()*0.18;
+    const a = 0.018 + Math.random()*0.03;
     const d = 0.18 + Math.random()*0.08;
-    const r = 0.70 + Math.random()*0.55;
-    if(panner){ try{ panner.pan.setTargetAtTime((Math.random()*1.2-0.6), ac.currentTime, 0.08);}catch{} }
+    let r = 0.70 + Math.random()*0.4;
+    if(roll(SCENE_PROFILE.melody.sustainProb)) r *= 1.5; // let tails breathe
+
+    if(panner && panDriftActive){
+      try{ panner.pan.setTargetAtTime((Math.random()*1.2-0.6), ac.currentTime, 0.08);}catch{}
+    }
 
     const o=ac.createOscillator(); o.type=Math.random()<0.7?'sine':'triangle'; o.frequency.value=freq; o.detune.value=(Math.random()-0.5)*6;
     const env=ac.createGain(); env.gain.value=0.0; o.connect(env); env.connect(melBus);
@@ -249,23 +360,22 @@
     env.gain.linearRampToValueAtTime(peak, now+a);
     env.gain.linearRampToValueAtTime(peak*0.42, now+a+d);
     env.gain.setTargetAtTime(0.0, now+a+d, r);
-    o.start(now); o.stop(now+a+d+r+0.12);
+    o.start(now); o.stop(now+a+d+r+0.15);
 
-    // occasional soft grace echo note
-    if(Math.random()<0.22){
+    // rare soft grace echo
+    if(roll(SCENE_PROFILE.melody.graceProb)){
       const o2=ac.createOscillator();
       const up = Math.random()<0.5? 2 : -2;
       o2.type=Math.random()<0.6?'sine':'triangle';
       o2.frequency.value=currentScale.root*Math.pow(2,(step+up)/12);
       const env2=ac.createGain(); env2.gain.value=0.0; o2.connect(env2); env2.connect(melBus);
       const dly=0.08 + Math.random()*0.14;
-      env2.gain.linearRampToValueAtTime(peak*0.5, now+dly+a*0.7);
-      env2.gain.linearRampToValueAtTime(peak*0.2, now+dly+a*0.7+0.12);
+      env2.gain.linearRampToValueAtTime(peak*0.45, now+dly+a*0.7);
+      env2.gain.linearRampToValueAtTime(peak*0.18, now+dly+a*0.7+0.12);
       env2.gain.setTargetAtTime(0.0, now+dly+a*0.7+0.12, 0.35);
       o2.start(now+dly); o2.stop(now+dly+0.8);
     }
   }
-
   function gentlyMoveFilter(){ if(!ac) return; filter.frequency.setTargetAtTime(filter.frequency.value + (Math.random()-0.5)*130, ac.currentTime, 0.7); }
 
   // ---------- WEBGL FRACTAL (Mandelbrot / Julia / Burning Ship / Tricorn; static) ----------
@@ -675,11 +785,27 @@
     if(busy) return; busy=true;
     if(!bag.length) refillBag();
 
-    // sound variety per page (no saw)
+    // --- audio scene per room ---
     if(ac){
-      const pick = Math.random();
-      setPadProfile({ring: pick<0.4}); // 40% with ring
+      // choose ambience
+      panDriftActive = roll(SCENE_PROFILE.ambience.panDriftProb);
+      lushActive = roll(SCENE_PROFILE.ambience.lushProb);
+      verbSend.gain.value = lushActive ? 0.58 : 0.40;
+      fb.gain.value = lushActive ? 0.33 : 0.26;
+
+      // maybe change pad on room enter
+      if(roll(SCENE_PROFILE.pads.changeOnRoomProb)){
+        const useRing = roll(SCENE_PROFILE.pads.ringProbPerRoom);
+        setPadProfile({ring:useRing});
+      }
       gentlyMoveFilter();
+
+      // schedule one late reharm?
+      if(reharmTimer){ clearTimeout(reharmTimer); reharmTimer=null; }
+      if(roll(SCENE_PROFILE.pads.reharmWithinRoomProb)){
+        const ms = Math.round(pickRange(SCENE_PROFILE.pads.reharmDelaySec)*1000);
+        reharmTimer = setTimeout(()=>{ setPadProfile({ring:lastRing}); }, ms);
+      }
     }
 
     let room=bag.shift();
