@@ -100,8 +100,7 @@
       busyDropIfGT: { window:8, notes:6, noteProb:0.30, forTicks:6 },
       underLiftIfLT: { window:8, notes:2, noteProb:0.70, forTicks:4 }
     },
-    // ↓ toned down
-    foley: { ambientProb: 0.20, tapProb: 0.57 },
+    foley: { ambientProb: 0.20, tapProb: 0.52 },  // bumped per your request
     darkGuard: { minLuma: 0.14, maxFetchTries: 3 }
   };
   function roll(p){ return Math.random() < p; }
@@ -130,7 +129,7 @@
     setPadProfile({ring:false});
     startMelody();
 
-    // Load CC0/PD foley (adds NASA/spacey results)
+    // kick off foley load (guarded; may still be racing with UI)
     loadFoleyClips();
   }
   function makeReverbImpulse(ctx, seconds, decay){ const rate=ctx.sampleRate,len=Math.floor(rate*seconds); const buf=ctx.createBuffer(2,len,rate); for(let c=0;c<2;c++){ const data=buf.getChannelData(c); for(let i=0;i<len;i++){ const t=i/len; data[i]=(Math.random()*2-1)*Math.pow(1-t,decay);} } return buf; }
@@ -172,116 +171,141 @@
     else if(type==='camera'){ const base = 800 + Math.random()*1200; const o=ac.createOscillator(); o.type='sine'; o.frequency.value=base; const g=ac.createGain(); g.gain.value=0; o.connect(g); g.connect(verbSend); g.connect(master); g.gain.linearRampToValueAtTime(0.5, now+0.01); g.gain.exponentialRampToValueAtTime(0.001, now+0.4); o.start(now); o.stop(now+0.5); const o2=ac.createOscillator(); const g2=ac.createGain(); o2.type='triangle'; o2.frequency.value=base*0.75; o2.connect(g2); g2.connect(verbSend); g2.connect(master); g2.gain.setValueAtTime(0, now+0.06); g2.gain.linearRampToValueAtTime(0.35, now+0.08); g2.gain.exponentialRampToValueAtTime(0.001, now+0.48); o2.start(now+0.06); o2.stop(now+0.55); duck(0.8, 180); }
   }
 
-  // ---------- CC0/PD Foley (Commons + a few NASA/spacey) ----------
-  let foleyBus, foleyClips=[], foleyReady=false;
-  // Known-safe file titles (if any fail, we just skip them)
-  const COMMONS_TITLES = [
-    'File:Sound_Effect_-_Door_Bell.ogg',
-    'File:Sound_Effects_-_Applause_after_a_concert.ogg',
-    'File:Electronic_doorbell.ogg',
-    'File:US_ringback_tone.ogg',
-    'File:Cellular_phone_interference_noise._-Sound_effect.ogg',
-    'File:Contact_type.ogg',
-    'File:Ba_dum_bum_stings.ogg',
-    'File:Walking-on-gravel-38827.ogg',
-    'File:Nl-flip-overvellen.ogg',
-    // spacey guesses (Public Domain NASA uploads on Commons; OK if some miss)
-    'File:Voyager_1_Plasma_Wave_Sounds.ogg',
-    'File:Cassini_Saturn_Radio_Emissions.ogg',
-    'File:Jupiter_radio_emissions.ogg'
-  ];
-  async function commonsFileUrls(titles){
-    const api = 'https://commons.wikimedia.org/w/api.php';
-    const qs  = '?action=query&format=json&origin=*&prop=imageinfo&iiprop=url|mime&titles=' +
-                encodeURIComponent(titles.join('|'));
-    const r = await fetch(api + qs);
-    const j = await r.json();
-    const pages = j && j.query && j.query.pages ? Object.values(j.query.pages) : [];
-    const urls = [];
-    for (const p of pages){
-      if (p.imageinfo && p.imageinfo[0] && p.imageinfo[0].url){
-        const mime = p.imageinfo[0].mime || '';
-        if (mime.startsWith('audio/') || /ogg|mpeg|wav/i.test(mime)) urls.push(p.imageinfo[0].url);
-      }
-    }
-    return urls;
+  // ---------- CC0/PD Foley (Commons + NASA; expanded library) ----------
+  let foleyBus, foleyClips = [], foleyReady = false, foleyLoading = false;
+
+  function isPDAudio(ii){
+    if(!ii || !ii.url) return false;
+    const mime = (ii.mime||'').toLowerCase();
+    if(!(mime.startsWith('audio/') || /(\.ogg|\.wav|\.mp3)(\?|$)/i.test(ii.url))) return false;
+    const meta = (ii.extmetadata)||{};
+    const lic  = (meta.LicenseShortName && meta.LicenseShortName.value) ? meta.LicenseShortName.value.toLowerCase() : '';
+    const terms= (meta.UsageTerms && meta.UsageTerms.value) ? meta.UsageTerms.value.toLowerCase() : '';
+    const artist = (meta.Artist && meta.Artist.value) ? meta.Artist.value.toLowerCase() : '';
+    const pd = lic.includes('public domain') || lic.includes('cc0') || terms.includes('public domain') || terms.includes('cc0');
+    const nasaPD = artist.includes('nasa') && (pd || lic.includes('pd') || terms.includes('pd'));
+    return pd || nasaPD;
   }
-  async function commonsSearchAudio(term, limit=8){
+  async function commonsFileInfoByTitlesPD(titles){
+    if(!titles || !titles.length) return [];
     const api = 'https://commons.wikimedia.org/w/api.php';
-    const qs  = '?action=query&format=json&origin=*&list=search&srnamespace=6&srlimit='+limit+'&srsearch='+encodeURIComponent(term);
+    const qs = '?action=query&format=json&origin=*'
+             + '&prop=imageinfo&iiprop=url|mime|extmetadata'
+             + '&iiextmetadatafilter=LicenseShortName|UsageTerms|Artist'
+             + '&titles=' + encodeURIComponent(titles.join('|'));
+    try{
+      const r = await fetch(api + qs);
+      const j = await r.json();
+      const pages = j && j.query && j.query.pages ? Object.values(j.query.pages) : [];
+      const out = [];
+      for(const p of pages){
+        const ii = p && p.imageinfo && p.imageinfo[0];
+        if(isPDAudio(ii)) out.push(ii.url);
+      }
+      return out;
+    }catch(_){ return []; }
+  }
+  async function commonsSearchPDAudio(term, limit=12){
+    const api = 'https://commons.wikimedia.org/w/api.php';
+    const qs  = '?action=query&format=json&origin=*'
+              + '&list=search&srnamespace=6&srlimit=' + limit
+              + '&srsearch=' + encodeURIComponent(term);
     try{
       const r = await fetch(api + qs);
       const j = await r.json();
       const titles = (j.query && j.query.search ? j.query.search : []).map(s=>s.title);
       if(!titles.length) return [];
-      return await commonsFileUrls(titles);
+      return await commonsFileInfoByTitlesPD(titles);
     }catch(_){ return []; }
   }
   async function loadFoleyClips(){
     if(!ac) return;
+    if(foleyReady || foleyLoading) return;
+    foleyLoading = true;
     try{
-      foleyBus = ac.createGain(); foleyBus.gain.value = 0.6; // slightly softer overall
-      const fVerbSend = ac.createGain(); fVerbSend.gain.value = 0.20;
-      foleyBus.connect(fVerbSend); fVerbSend.connect(verb);
-      foleyBus.connect(master);
+      if(!foleyBus){
+        foleyBus = ac.createGain();
+        foleyBus.gain.value = 0.60; // louder as requested
+        const fVerbSend = ac.createGain();
+        fVerbSend.gain.value = 0.20;
+        foleyBus.connect(fVerbSend); fVerbSend.connect(verb);
+        foleyBus.connect(master);
+      }
 
-      // base set
-      const base = await commonsFileUrls(COMMONS_TITLES);
-      // sprinkle in “space” searches (NASA PD)
-      const space1 = await commonsSearchAudio('NASA plasma wave sound ogg', 6);
-      const space2 = await commonsSearchAudio('space radio emission ogg', 6);
+      const urls = new Set();
+      const NASA_TITLES = [
+        'File:Voyager_1_Plasma_Wave_Sounds.ogg',
+        'File:Cassini_Saturn_Radio_Emissions.ogg',
+        'File:Jupiter_radio_emissions.ogg'
+      ];
+      for(const u of await commonsFileInfoByTitlesPD(NASA_TITLES)) urls.add(u);
 
-      const urls = [...base, ...space1, ...space2];
-      const chosen = urls.sort(()=>Math.random()-0.5).slice(0, 12);
+      const queries = [
+        'public domain wind sound ogg','public domain rain sound ogg',
+        'public domain ocean waves sound ogg','public domain room tone audio',
+        'public domain switch click sound','public domain paper rustle audio',
+        'public domain footsteps audio','public domain typewriter sound',
+        'public domain beep sound','public domain servo motor sound',
+        'NASA audio plasma wave','NASA radio emission audio','NASA spacecraft sound',
+        'space ambient sound public domain'
+      ];
+      for (let i=0; i<queries.length; i+=4){
+        const slice = queries.slice(i,i+4);
+        const results = await Promise.all(slice.map(q=>commonsSearchPDAudio(q, 10)));
+        for(const arr of results){ for(const u of arr){ if(urls.size < 40) urls.add(u); } }
+        if(urls.size >= 24) break;
+      }
 
-      for (const u of chosen){
+      const list = Array.from(urls);
+      list.sort(()=>Math.random()-0.5);
+      const target = Math.min(24, list.length);
+      for(let i=0;i<target;i++){
         try{
+          const u = list[i];
           const ab = await fetch(u, {mode:'cors'}).then(r=>r.arrayBuffer());
           const buf = await new Promise((res,rej)=>ac.decodeAudioData(ab, res, rej));
           foleyClips.push({buf, url:u});
-        }catch(_){}
+        }catch(_){ /* skip */ }
       }
-      foleyReady = foleyClips.length>0;
-    }catch(_){ foleyReady=false; }
+      foleyReady = foleyClips.length > 0;
+    }catch(_){
+      foleyReady = false;
+    } finally {
+      foleyLoading = false;
+    }
   }
+
+  // Gate: try to have foley attempted before first room
+  async function ensureFoleyLoaded(timeoutMs=1500){
+    try{
+      if (foleyReady) return;
+      const p = loadFoleyClips();
+      await Promise.race([ p, new Promise(r => setTimeout(r, timeoutMs)) ]);
+    }catch(_){}
+  }
+
+  // Play one PD/CC0 clip
   function playFoleyClip({gain=0.22, rate=1.0, maxSec=1.2}={}){
     if(!foleyReady) return false;
     const pick = foleyClips[(Math.random()*foleyClips.length)|0];
-    const src = ac.createBufferSource(); src.buffer = pick.buf; src.playbackRate.value = rate * (0.95 + Math.random()*0.1);
+    const src = ac.createBufferSource();
+    src.buffer = pick.buf;
+    src.playbackRate.value = rate * (0.95 + Math.random()*0.1);
 
-    // tame harshness a bit: gentle HP+LP
     const hp = ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=80 + Math.random()*140;
-    const lp = ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2400 + Math.random()*2200;
+    const lp = ac.createBiquadFilter(); lp.type='lowpass';  lp.frequency.value=2400 + Math.random()*2200;
 
-    const g = ac.createGain();
-    g.gain.value = 0.0;
-
+    const g = ac.createGain(); g.gain.value = 0.0;
     src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(foleyBus);
 
     const now = ac.currentTime;
-    const stopAt = now + Math.min(src.buffer.duration, maxSec); // hard cap so nothing lingers
+    const stopAt = now + Math.min(src.buffer.duration, maxSec);
     g.gain.linearRampToValueAtTime(gain*(0.8 + Math.random()*0.4), now+0.03);
     g.gain.setTargetAtTime(0.0001, stopAt-0.15, 0.10);
 
     src.start(now);
     src.stop(stopAt);
     return true;
-  }
-  function maybePlayAmbientFoley(){
-    if(!ac) return;
-    if(roll(SCENE_PROFILE.foley.ambientProb)){
-      if(!playFoleyClip({gain:0.20, rate: 0.9 + Math.random()*0.2, maxSec:1.4})){
-        playSynthFoley('whoosh'); // fallback
-      }
-    }
-  }
-  function maybeTapFoley(){
-    if(!ac) return;
-    if(roll(SCENE_PROFILE.foley.tapProb)){
-      if(!playFoleyClip({gain:0.24 + Math.random()*0.08, rate: 0.95 + Math.random()*0.15, maxSec:1.0})){
-        playSynthFoley('camera'); // fallback
-      }
-    }
   }
 
   // ----------------- FRACTALS (static) -----------------
@@ -342,7 +366,7 @@
 
   // ----------------- ROOM ENGINE -----------------
   const TYPES=['image-full','image-pixel','image-zoom','abstract-fractal'];
-  let bag=[]; let busy=false; let evolveTimers=[]; let lastPortalPos=null; // continuity anchor
+  let bag=[]; let busy=false; let evolveTimers=[]; let lastPortalPos=null;
 
   function refillBag(){ bag=[]; for(let i=0;i<12;i++){ const t=TYPES[(Math.random()*TYPES.length)|0]; bag.push({id:Date.now()+"-"+i+"-"+Math.random().toString(36).slice(2), type:t}); } }
 
@@ -350,14 +374,26 @@
     if(busy) return; busy=true; if(!bag.length) refillBag();
 
     // audio per room
-    if(ac){ const panDrift = roll(SCENE_PROFILE.ambience.panDriftProb); panDriftActive = panDrift; lushActive = roll(SCENE_PROFILE.ambience.lushProb); verbSend.gain.value = lushActive ? 0.58 : 0.40; fb.gain.value = lushActive ? 0.33 : 0.26; padMuted = roll(SCENE_PROFILE.pads.muteProb); const shouldChangePad = roll(SCENE_PROFILE.pads.changeOnRoomProb) || (padMuted !== lastPadMuted); if(shouldChangePad){ const useRing = roll(SCENE_PROFILE.pads.ringProbPerRoom); setPadProfile({ring:useRing}); lastPadMuted = padMuted; } gentlyMoveFilter(); if(reharmTimer){ clearTimeout(reharmTimer); reharmTimer=null; } if(!padMuted && roll(SCENE_PROFILE.pads.reharmWithinRoomProb)){ const ms = Math.round(pickRange(SCENE_PROFILE.pads.reharmDelaySec)*1000); reharmTimer = setTimeout(()=>{ setPadProfile({ring:lastRing}); }, ms); } }
+    if(ac){
+      const panDrift = roll(SCENE_PROFILE.ambience.panDriftProb); panDriftActive = panDrift;
+      lushActive = roll(SCENE_PROFILE.ambience.lushProb); verbSend.gain.value = lushActive ? 0.58 : 0.40; fb.gain.value = lushActive ? 0.33 : 0.26;
+      padMuted = roll(SCENE_PROFILE.pads.muteProb);
+      const shouldChangePad = roll(SCENE_PROFILE.pads.changeOnRoomProb) || (padMuted !== lastPadMuted);
+      if(shouldChangePad){ const useRing = roll(SCENE_PROFILE.pads.ringProbPerRoom); setPadProfile({ring:useRing}); lastPadMuted = padMuted; }
+      gentlyMoveFilter();
+      if(reharmTimer){ clearTimeout(reharmTimer); reharmTimer=null; }
+      if(!padMuted && roll(SCENE_PROFILE.pads.reharmWithinRoomProb)){
+        const ms = Math.round(pickRange(SCENE_PROFILE.pads.reharmDelaySec)*1000);
+        reharmTimer = setTimeout(()=>{ setPadProfile({ring:lastRing}); }, ms);
+      }
+    }
 
     const room=bag.shift(); const stageRect=stageEl.getBoundingClientRect();
 
     // dots
     styleDot(p1); styleDot(p2);
-    placeDot(p1,stageRect, /*bias*/ true);
-    if(Math.random()<0.55){ placeDot(p2,stageRect, /*bias*/ false); p2.style.display='block'; } else { p2.style.display='none'; }
+    placeDot(p1,stageRect,true);
+    if(Math.random()<0.55){ placeDot(p2,stageRect,false); p2.style.display='block'; } else { p2.style.display='none'; }
     p1.style.display='block';
 
     // clear visuals
@@ -365,7 +401,9 @@
 
     // visuals by type
     if(room.type==='abstract-fractal'){
-      if(gl && !prog) initGL(); if(gl){ setFractalView(); renderFractalOnce(); } if(ac) setForceScale(lastFractalBright ? 'major' : null); await placePoetry();
+      if(gl && !prog) initGL(); if(gl){ setFractalView(); renderFractalOnce(); }
+      if(ac) setForceScale(lastFractalBright ? 'major' : null);
+      await placePoetry();
       const tap = (el)=> transitionAtDot(el, ()=>{ maybeTapFoley(); cut(); }); p1.onclick=(e)=>tap(e.currentTarget); p2.onclick=(e)=>tap(e.currentTarget);
     } else {
       // external image with dark guard
@@ -386,10 +424,28 @@
     // evolve dots a bit
     startEvolvingDots();
 
-    // ambient CC0/PD foley sometimes (fallback to synth if none loaded)
+    // ambient PD/CC0 foley sometimes (fallback to synth if none loaded)
     maybePlayAmbientFoley();
 
     busy=false;
+  }
+
+  // -------------- Foley triggers --------------
+  function maybePlayAmbientFoley(){
+    if(!ac) return;
+    if(roll(SCENE_PROFILE.foley.ambientProb)){
+      if(!playFoleyClip({gain:0.20, rate: 0.9 + Math.random()*0.2, maxSec:1.4})){
+        playSynthFoley('whoosh');
+      }
+    }
+  }
+  function maybeTapFoley(){
+    if(!ac) return;
+    if(roll(SCENE_PROFILE.foley.tapProb)){
+      if(!playFoleyClip({gain:0.24 + Math.random()*0.08, rate: 0.95 + Math.random()*0.15, maxSec:1.0})){
+        playSynthFoley('camera');
+      }
+    }
   }
 
   // -------------- Dot helpers (evolve + continuity bias) --------------
@@ -423,7 +479,13 @@
   function cut(){ nextRoom(); }
 
   // ----------------- START -----------------
-  beginBtn.addEventListener('click', async ()=>{ if(!started){ initAudio(); started=true; } overlay.style.display='none'; if(gl && !prog){ initGL(); } await nextRoom(); }, {passive:false});
+  beginBtn.addEventListener('click', async ()=>{
+    if (!started){ initAudio(); started = true; }
+    await ensureFoleyLoaded(1500);     // ensure PD/CC0 foley attempted before first room
+    overlay.style.display='none';
+    if(gl && !prog){ initGL(); }
+    await nextRoom();
+  }, {passive:false});
 
   // Smoke tests
   (function smoke(){ try{ console.assert(!!stageEl,'stage missing'); console.assert(glCanvas && imgCanvas,'canvases missing'); console.assert(typeof beginBtn.onclick !== 'undefined','start handler ok'); if(gl){ const ok = gl.getParameter(gl.VERSION); console.assert(!!ok,'webgl context'); } }catch(e){ console.warn('Smoke tests:',e); } })();
@@ -431,7 +493,3 @@
 </script>
 </body>
 </html>
-
-
-
-
